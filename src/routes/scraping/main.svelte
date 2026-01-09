@@ -110,16 +110,16 @@
 
         <div class="mt-4">
           <div
-            class="w-full h-3 rounded bg-[var(--md-surface-variant)] overflow-hidden"
+            class="w-full h-3 rounded bg-(--md-surface-variant) overflow-hidden"
           >
             {#if isRunning && totalItems === 0}
               <div
-                class="h-full bg-gradient-to-r from-[var(--md-primary)] to-[var(--md-primary)] animate-pulse"
+                class="h-full bg-linear-to-r from-(--md-primary) to-(--md-primary) animate-pulse"
                 style="width:100%"
               ></div>
             {:else}
               <div
-                class="h-full bg-[var(--md-primary)]"
+                class="h-full bg-(--md-primary)"
                 style="width:{progressPercent}%"
               ></div>
             {/if}
