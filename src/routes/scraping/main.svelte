@@ -171,6 +171,7 @@
   };
 
   const stopScraping = () => {
+    console.log("Stopping scraping...");
     invoke("stop_scraping")
       .then((message) => {
         console.log(message);
@@ -186,9 +187,7 @@
     <Button variant="outlined" onclick={startScraping} disabled={isRunning}
       >Start</Button
     >
-    <Button variant="contained" onclick={stopScraping} disabled={!isRunning}
-      >Stop</Button
-    >
+    <Button variant="contained" onclick={stopScraping}>Stop</Button>
   </div>
 </TopAppBar>
 

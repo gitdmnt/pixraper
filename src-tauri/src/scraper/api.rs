@@ -40,11 +40,13 @@ pub(crate) struct IllustManga {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct ResponseBody {
     pub(crate) illust_manga: IllustManga,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct PixivSearchResponse {
     pub(crate) error: bool,
     pub(crate) message: Option<String>,
@@ -58,7 +60,7 @@ pub(crate) struct AdContainer {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(untagged)]
+#[serde(untagged, rename_all = "camelCase")]
 pub enum ItemRecordOrAd {
     Ad(AdContainer),
     Item(IllustData),
@@ -74,6 +76,7 @@ pub(crate) struct IllustDetailBody {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct IllustDetailResponse {
     pub(crate) error: bool,
     pub(crate) message: String,
@@ -112,7 +115,7 @@ pub async fn fetch_search_result(
 
     while curr_page <= last_page {
         if token.is_cancelled() {
-            println!("Rough scraping was cancelled.");
+            println!("Scraping was cancelled.");
             break;
         }
 

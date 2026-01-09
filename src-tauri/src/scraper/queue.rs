@@ -36,16 +36,20 @@ enum Command {
     GetQueue(tokio::sync::oneshot::Sender<Vec<ScrapingOption>>),
     /// キューから特定のインデックスの要素を削除する。
     Remove(usize),
+    /// Workerの処理が完了したことを通知する。
+    WorkerFinished,
 }
 
 /// Actor の実体。キューと進捗、HTTP クライアント、設定を保持する。
 struct QueryQueueActor {
     queue: VecDeque<ScrapingOption>,
-    progress: ScrapingProgress,
+    progress: Arc<Mutex<ScrapingProgress>>,
     client: reqwest::Client,
     cfg: Config,
     app_handle: tauri::AppHandle,
     scraping_token: Option<tokio_util::sync::CancellationToken>,
+    /// 現在Workerが実行中かどうかを管理するフラグ
+    worker_running: bool,
     receiver: tokio::sync::mpsc::Receiver<Command>,
     /// 自分自身への送信チャンネル（内部ループ用）
     sender: tokio::sync::mpsc::Sender<Command>,
@@ -66,15 +70,16 @@ impl QueryQueueActor {
             .unwrap();
         Self {
             queue: VecDeque::new(),
-            progress: ScrapingProgress {
+            progress: Arc::new(Mutex::new(ScrapingProgress {
                 status: ScrapingStatus::Stopped,
                 total: None,
                 current: None,
-            },
+            })),
             client,
             cfg,
             app_handle,
             scraping_token: None,
+            worker_running: false,
             receiver,
             sender,
         }
@@ -98,53 +103,74 @@ impl QueryQueueActor {
                     }
                     self.scraping_token = Some(token);
 
-                    self.progress.status = ScrapingStatus::Running;
+                    {
+                        let mut p = self.progress.lock().await;
+                        p.status = ScrapingStatus::Running;
+                    }
                     let _ = self.sender.send(Command::RunNext).await;
                 }
                 Command::RunNext => {
+                    // 実行中なら多重起動を防止するために何もしない
+                    if self.worker_running {
+                        continue;
+                    }
+
                     // トークンチェック
                     let token = match &self.scraping_token {
                         Some(t) if !t.is_cancelled() => t.clone(),
                         _ => {
                             // キャンセル済み、またはトークンなし停止
-                            self.progress.status = ScrapingStatus::Stopped;
+                            let mut p = self.progress.lock().await;
+                            p.status = ScrapingStatus::Stopped;
                             self.scraping_token = None;
                             continue;
                         }
                     };
 
                     if let Some(option) = self.queue.pop_front() {
-                        // Workerに処理を委譲
-                        Worker::run(
-                            &option,
-                            &self.client,
-                            &Arc::new(Mutex::new(self.progress.clone())),
-                            &self.cfg,
-                            &token,
-                            &self.app_handle,
-                        )
-                        .await
-                        .unwrap_or_else(|e| {
-                            println!("Error during scraping: {}", e);
-                        });
+                        let client = self.client.clone();
+                        let progress = self.progress.clone(); // Arc<Mutex>
+                        let cfg = self.cfg.clone();
+                        let app_handle = self.app_handle.clone();
+                        let sender = self.sender.clone(); // Self sender
 
-                        // 次のループをスケジュール
-                        // チャンネルが一杯でなければ送信
-                        let _ = self.sender.send(Command::RunNext).await;
+                        // フラグを立てて実行中にする
+                        self.worker_running = true;
+
+                        // Workerに処理を委譲 (Spawnして非同期実行)
+                        tokio::spawn(async move {
+                            Worker::run(&option, &client, &progress, &cfg, &token, &app_handle)
+                                .await
+                                .unwrap_or_else(|e| {
+                                    println!("Error during scraping: {}", e);
+                                });
+
+                            // 完了通知を送る (RunNextではなくWorkerFinished)
+                            let _ = sender.send(Command::WorkerFinished).await;
+                        });
                     } else {
                         // キューが空
-                        self.progress.status = ScrapingStatus::Stopped;
+                        let mut p = self.progress.lock().await;
+                        p.status = ScrapingStatus::Stopped;
                         self.scraping_token = None;
                     }
                 }
+                Command::WorkerFinished => {
+                    self.worker_running = false;
+                    // 次があれば実行する
+                    let _ = self.sender.send(Command::RunNext).await;
+                }
                 Command::Stop => {
+                    println!("Stopping scraping process...");
                     if let Some(token) = &self.scraping_token {
                         token.cancel();
                     }
-                    self.progress.status = ScrapingStatus::Stopped;
+                    let mut p = self.progress.lock().await;
+                    p.status = ScrapingStatus::Stopped;
                 }
                 Command::GetProgress(responder) => {
-                    let _ = responder.send((self.queue.len(), self.progress.clone()));
+                    let p = self.progress.lock().await;
+                    let _ = responder.send((self.queue.len(), p.clone()));
                 }
                 Command::GetQueue(responder) => {
                     let _ = responder.send(self.queue.iter().cloned().collect());
