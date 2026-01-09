@@ -45,7 +45,7 @@
     <select
       class="md-select w-full"
       value={scrapingOption.searchMode}
-      on:change={(e) =>
+      onchange={(e) =>
         updateField("searchMode", (e.target as HTMLSelectElement).value)}
     >
       <option value="s_tag">Partially Matching Tags</option>
@@ -62,7 +62,7 @@
           <span class="text-sm">{tag}</span>
           <button
             class="text-xs font-medium"
-            on:click={() => handleRemoveTag(tag)}>×</button
+            onclick={() => handleRemoveTag(tag)}>×</button
           >
         </div>
       {/each}
@@ -70,7 +70,7 @@
         class="md-search-input"
         type="text"
         placeholder="Enter tag and press Enter"
-        on:keydown={handleAddTag}
+        onkeydown={handleAddTag}
       />
     </div>
   </div>
@@ -82,7 +82,7 @@
         type="date"
         class="md-select w-full"
         value={scrapingOption.scd}
-        on:change={(e) =>
+        onchange={(e) =>
           updateField("scd", (e.target as HTMLInputElement).value)}
       />
     </div>
@@ -92,14 +92,23 @@
         type="date"
         class="md-select w-full"
         value={scrapingOption.ecd}
-        on:change={(e) =>
+        onchange={(e) =>
           updateField("ecd", (e.target as HTMLInputElement).value)}
       />
     </div>
+    <label class="flex items-center gap-2 text-sm text-muted">
+      <input
+        type="checkbox"
+        bind:checked={scrapingOption.detailed}
+        onchange={(e) =>
+          updateField("detailed", (e.target as HTMLInputElement).checked)}
+      />
+      <span>Detailed</span>
+    </label>
   </div>
 
   <div class="mt-4 flex gap-2">
-    <Button variant="contained" on:click={handleAddQueue}>Add Queue</Button>
-    <Button variant="outlined" on:click={handleClearQueue}>Clear</Button>
+    <Button variant="contained" onclick={handleAddQueue}>Add Queue</Button>
+    <Button variant="outlined" onclick={handleClearQueue}>Clear</Button>
   </div>
 </div>

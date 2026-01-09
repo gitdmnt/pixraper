@@ -8,12 +8,12 @@
   import { invoke } from "@tauri-apps/api/core";
   import { Temporal } from "@js-temporal/polyfill";
 
-  let detailedMode = false;
   let scrapingOption = {
     tags: [] as string[],
     searchMode: "s_tag",
     scd: Temporal.Now.plainDateISO().toString(),
     ecd: Temporal.Now.plainDateISO().toString(),
+    detailed: false,
   };
 
   // UI state
@@ -43,16 +43,13 @@
   };
 
   const addQueue = () => {
-    isRunning = true;
-    scrapedItems = 0;
-    totalItems = 0; // backend will report actual totals; show indeterminate state until then
-
+    console.log("Adding to queue:", scrapingOption);
     invoke("add_queue", { scrapingOption })
       .then(() => {
-        console.log("Detailed scraping started");
+        console.log("Scraping option added to queue");
       })
       .catch((error) => {
-        console.error("Error starting detailed scraping:", error);
+        console.error("Error adding scraping option to queue:", error);
         isRunning = false;
       });
   };
@@ -68,6 +65,7 @@
   };
 
   const startScraping = () => {
+    isRunning = true;
     invoke("start_scraping")
       .then(() => {
         console.log("Scraping started");
@@ -91,10 +89,6 @@
 
 <TopAppBar title="Scraping">
   <div slot="actions" class="flex items-center gap-3">
-    <label class="flex items-center gap-2 text-sm text-muted">
-      <input type="checkbox" bind:checked={detailedMode} />
-      <span>Detailed</span>
-    </label>
     <Button variant="outlined" onclick={startScraping} disabled={isRunning}
       >Start</Button
     >

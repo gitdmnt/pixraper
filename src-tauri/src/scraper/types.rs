@@ -27,6 +27,7 @@ pub struct ScrapingOption {
     pub search_mode: String,
     pub scd: String,
     pub ecd: String,
+    pub detailed: bool,
 }
 
 // ----- レスポンス関連の型 -----
@@ -149,12 +150,8 @@ pub enum ScrapingStatus {
 
 // ----- ScrapingOption の補助メソッド -----
 impl ScrapingOption {
-    /// このオプションでラフスクレイピングを実行する実際の処理。
-    ///
-    /// 実装の意図:
-    /// - オプションに関連するロジック（URL とパラメータ生成）を束ねる。
-    /// - キャンセルチェックを随所で行い、途中で止められるようにする。
-    pub async fn fetch_rough(
+    /// このオプションに基いてスクレイピングを実行する。
+    pub async fn fetch(
         &self,
         client: &reqwest::Client,
         progress: &Arc<Mutex<ScrapingProgress>>,

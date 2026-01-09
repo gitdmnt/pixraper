@@ -92,7 +92,7 @@ impl QueryQueueActor {
                             }
                         };
                         option
-                            .fetch_rough(
+                            .fetch(
                                 &self.client,
                                 &Arc::new(Mutex::new(self.progress.clone())),
                                 &self.cfg,
