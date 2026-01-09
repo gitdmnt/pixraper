@@ -17,6 +17,43 @@ use tokio::sync::Mutex;
 use crate::config::Config;
 use crate::scraper::scrape::{ItemRecord, ScrapingOption, ScrapingProgress, ScrapingStatus};
 
+// ----- 検索 API のレスポンス型 -----
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PixivSearchResponse {
+    pub(crate) error: bool,
+    pub(crate) message: Option<String>,
+    pub(crate) body: ResponseBody,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ResponseBody {
+    pub(crate) illust_manga: IllustManga,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct IllustManga {
+    pub(crate) data: Vec<ItemRecordOrAd>,
+    pub(crate) total: u64,
+    pub(crate) last_page: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(untagged, rename_all = "camelCase")]
+pub enum ItemRecordOrAd {
+    Ad(AdContainer),
+    Item(IllustData),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AdContainer {
+    pub(crate) is_ad_container: bool,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct IllustData {
@@ -31,49 +68,7 @@ pub(crate) struct IllustData {
     pub(crate) height: u64,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct IllustManga {
-    pub(crate) data: Vec<ItemRecordOrAd>,
-    pub(crate) total: u64,
-    pub(crate) last_page: u64,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct ResponseBody {
-    pub(crate) illust_manga: IllustManga,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct PixivSearchResponse {
-    pub(crate) error: bool,
-    pub(crate) message: Option<String>,
-    pub(crate) body: ResponseBody,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct AdContainer {
-    pub(crate) is_ad_container: bool,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(untagged, rename_all = "camelCase")]
-pub enum ItemRecordOrAd {
-    Ad(AdContainer),
-    Item(IllustData),
-}
-
 // ----- 詳細 API のレスポンス型 -----
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct IllustDetailBody {
-    pub(crate) bookmark_count: u64,
-    pub(crate) view_count: u64,
-}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -81,6 +76,12 @@ pub(crate) struct IllustDetailResponse {
     pub(crate) error: bool,
     pub(crate) message: String,
     pub(crate) body: Option<IllustDetailBody>,
+}
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct IllustDetailBody {
+    pub(crate) bookmark_count: u64,
+    pub(crate) view_count: u64,
 }
 
 /// ラフ検索（ページ単位で複数ページを取得）を実行する公開API
