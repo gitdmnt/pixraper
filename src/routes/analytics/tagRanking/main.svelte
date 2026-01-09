@@ -214,7 +214,6 @@
         <option value="viewPerWork">View per Works</option>
         <option value="bookmarkPerView">Bookmark percentage per View</option>
       </select>
-      <Button variant="outlined" onclick={() => setPage(0)}>Reset</Button>
     </div>
   </TopAppBar>
 
