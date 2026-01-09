@@ -222,73 +222,71 @@
     </div>
   </TopAppBar>
 
-  {#if filteredTags.length > 0}
-    <div class="flex gap-4 items-start">
-      <main class="flex-1 flex flex-col min-h-0 gap-3">
+  <div class="flex gap-4 items-start">
+    <main class="flex-1 flex flex-col min-h-0 gap-3">
+      {#if filteredTags.length > 0}
         <TagList {tableItems} {tagMap} {itemsPerPage} bind:page />
-
-        <div class="flex items-center justify-between mt-2">
-          <div class="text-sm">
-            Showing {page * itemsPerPage + 1} - {Math.min(
-              (page + 1) * itemsPerPage,
-              tableItems.length
-            )} of {tableItems.length}
-          </div>
-          <div class="flex gap-2">
-            <Button
-              variant="outlined"
-              onclick={() => setPage(Math.max(0, page - 1))}>Previous</Button
-            >
-            <Button
-              variant="contained"
-              onclick={() =>
-                setPage(
-                  Math.min(
-                    Math.floor((tableItems.length - 1) / itemsPerPage),
-                    page + 1
-                  )
-                )}>Next</Button
-            >
-          </div>
+      {:else}
+        <div class="md-card p-6">
+          <p class="text-center">No data available for tag ranking.</p>
         </div>
-      </main>
-
-      <aside class="flex flex-col gap-4">
-        <FiltersPanel
-          bind:showAIGenerated
-          bind:showNotAIGenerated
-          bind:showXRestricted
-          bind:showNotXRestricted
-        />
-
-        <div class="md-card p-4 shrink-0 hidden md:flex flex-col gap-3">
-          <div class="font-medium">Quick Controls</div>
-          <div class="text-sm">Ranking Type</div>
-          <select bind:value={weightedType} class="md-select">
-            <option value="workCount">Work Count</option>
-            <option value="bookmarkCount">Total Bookmark</option>
-            <option value="viewCount">Total View</option>
-            <option value="bookmarkPerWork">Bookmark per Works</option>
-            <option value="viewPerWork">View per Works</option>
-            <option value="bookmarkPerView">Bookmark percentage per View</option
-            >
-          </select>
-          <div class="mt-auto text-xs text-muted">
-            Tip: Use search to filter tags quickly.
-          </div>
+      {/if}
+      <div class="flex items-center justify-between mt-2">
+        <div class="text-sm">
+          Showing {page * itemsPerPage + 1} - {Math.min(
+            (page + 1) * itemsPerPage,
+            tableItems.length
+          )} of {tableItems.length}
         </div>
-        <OverviewCard
-          rowsLength={rows.length}
-          filteredTagsLength={filteredTags.length}
-          {perfTimings}
-        ></OverviewCard>
-      </aside>
-    </div>
-  {:else}
-    <div class="md-card p-6">
-      <p class="text-center">No data available for tag ranking.</p>
-    </div>
-  {/if}
+        <div class="flex gap-2">
+          <Button
+            variant="outlined"
+            onclick={() => setPage(Math.max(0, page - 1))}>Previous</Button
+          >
+          <Button
+            variant="contained"
+            onclick={() =>
+              setPage(
+                Math.min(
+                  Math.floor((tableItems.length - 1) / itemsPerPage),
+                  page + 1
+                )
+              )}>Next</Button
+          >
+        </div>
+      </div>
+    </main>
+
+    <aside class="flex flex-col gap-4">
+      <FiltersPanel
+        bind:showAIGenerated
+        bind:showNotAIGenerated
+        bind:showXRestricted
+        bind:showNotXRestricted
+      />
+
+      <div class="md-card p-4 shrink-0 hidden md:flex flex-col gap-3">
+        <div class="font-medium">Quick Controls</div>
+        <div class="text-sm">Ranking Type</div>
+        <select bind:value={weightedType} class="md-select">
+          <option value="workCount">Work Count</option>
+          <option value="bookmarkCount">Total Bookmark</option>
+          <option value="viewCount">Total View</option>
+          <option value="bookmarkPerWork">Bookmark per Works</option>
+          <option value="viewPerWork">View per Works</option>
+          <option value="bookmarkPerView">Bookmark percentage per View</option>
+        </select>
+        <div class="mt-auto text-xs text-muted">
+          Tip: Use search to filter tags quickly.
+        </div>
+      </div>
+      <OverviewCard
+        rowsLength={rows.length}
+        filteredTagsLength={filteredTags.length}
+        {perfTimings}
+      ></OverviewCard>
+    </aside>
+  </div>
 </div>
 
 <style>
