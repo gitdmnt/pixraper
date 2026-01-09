@@ -1,7 +1,11 @@
 <script lang="ts">
-  export let rows: any[] = [];
-
+  import TopAppBar from "$lib/components/TopAppBar.svelte";
   import Button from "$lib/components/Button.svelte";
+  import TagList from "./TagList.svelte";
+  import FiltersPanel from "./FiltersPanel.svelte";
+  import OverviewCard from "./OverviewCard.svelte";
+
+  export let rows: any[] = [];
 
   // ユーザーが変更するフィルターやソートの条件
   let weightedType:
@@ -39,12 +43,7 @@
     console.debug("perf", name, ms.toFixed(2) + "ms");
   }
 
-  // UI helpers
-  import TopAppBar from "$lib/components/TopAppBar.svelte";
-  import TagList from "./TagList.svelte";
-  import FiltersPanel from "./FiltersPanel.svelte";
-  import OverviewCard from "./OverviewCard.svelte";
-
+  // main reactive block: recompute filteredTags and tableItems when inputs change
   $: {
     const t0 = performance.now();
 
@@ -146,6 +145,7 @@
     });
   }
 
+  // derive tableItems from filteredTags
   $: tableItems = filteredTags.map((tag) => {
     let value = (() => {
       if (weightedType === "workCount") {
@@ -176,19 +176,15 @@
   // quick lookup map from tag -> stats for rendering subtitles
   $: tagMap = new Map(filteredTags.map((t) => [t.tag, t]));
 
-  function fmt(n: any) {
-    if (typeof n === "number") return n.toLocaleString();
-    return n;
-  }
-
-  function setPage(p: number) {
+  // pagination helpers
+  const setPage = (p: number) => {
     const maxPage = Math.max(
       0,
       Math.floor((tableItems.length - 1) / itemsPerPage)
     );
     const clamped = Math.max(0, Math.min(p, maxPage));
     page = clamped;
-  }
+  };
 
   // keep page within range when items change
   $: {
