@@ -9,6 +9,17 @@ use tauri::Manager;
 
 use crate::scraper::scrape::ItemRecord;
 
+/// テストや実環境で差し替え可能な AppHandle の抽象。
+pub trait AppHandleLike: Send + Sync {
+    fn document_dir(&self) -> Option<std::path::PathBuf>;
+}
+
+impl AppHandleLike for tauri::AppHandle {
+    fn document_dir(&self) -> Option<std::path::PathBuf> {
+        self.path().document_dir().ok()
+    }
+}
+
 /// アイテム一覧を CSV に保存します。
 ///
 /// 実装の意図:
@@ -16,14 +27,13 @@ use crate::scraper::scrape::ItemRecord;
 /// - 将来的には一時ファイルを書いてからリネームする等、原子性の向上を検討できます。
 pub async fn save_as_csv(
     items: &[ItemRecord],
-    app_handle: &tauri::AppHandle,
+    app_handle: &dyn AppHandleLike,
 ) -> Result<(), String> {
     let now = chrono::Local::now();
     let filename = format!("result_{}.csv", now.format("%Y%m%d_%H%M%S"));
     let output_path = app_handle
-        .path()
         .document_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("Pixraper")
         .join(filename);
 

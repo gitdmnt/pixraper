@@ -13,6 +13,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::config::Config;
+use crate::scraper::csv::AppHandleLike;
 
 use crate::scraper::api::{fetch_illust_data, fetch_search_result, IllustData};
 
@@ -91,7 +92,7 @@ impl Worker {
         progress: &Arc<Mutex<ScrapingProgress>>,
         cfg: &Config,
         token: &tokio_util::sync::CancellationToken,
-        app_handle: &tauri::AppHandle,
+        app_handle: &dyn AppHandleLike,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Prepare and delegate network/paging to the api layer
         println!("Starting scraping with options: {:?}", option);

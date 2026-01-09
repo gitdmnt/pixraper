@@ -13,6 +13,7 @@ use std::collections::VecDeque;
 use tokio::sync::Mutex;
 
 use crate::config::Config;
+use crate::scraper::csv::AppHandleLike;
 use crate::scraper::scrape::{ScrapingOption, ScrapingProgress, ScrapingStatus, Worker};
 
 /// キュー操作用のコマンド列挙型。
@@ -38,6 +39,8 @@ enum Command {
     Remove(usize),
     /// Workerの処理が完了したことを通知する。
     WorkerFinished,
+    /// Worker が動作中かどうかを問い合わせる（主にテスト用）
+    IsWorkerRunning(tokio::sync::oneshot::Sender<bool>),
 }
 
 /// Actor の実体。キューと進捗、HTTP クライアント、設定を保持する。
@@ -46,13 +49,17 @@ struct QueryQueueActor {
     progress: Arc<Mutex<ScrapingProgress>>,
     client: reqwest::Client,
     cfg: Config,
-    app_handle: tauri::AppHandle,
+    app_handle: Arc<dyn AppHandleLike>,
     scraping_token: Option<tokio_util::sync::CancellationToken>,
     /// 現在Workerが実行中かどうかを管理するフラグ
     worker_running: bool,
     receiver: tokio::sync::mpsc::Receiver<Command>,
     /// 自分自身への送信チャンネル（内部ループ用）
     sender: tokio::sync::mpsc::Sender<Command>,
+    /// テストやオプションで同期実行／疑似実行するためのフラグ
+    spawn_workers_async: bool,
+    /// テスト用: Worker の実行を模擬する（実際の処理を行わず完了通知だけ送る）
+    simulate_workers: bool,
 }
 
 impl QueryQueueActor {
@@ -62,12 +69,35 @@ impl QueryQueueActor {
         cfg: Config,
         app_handle: tauri::AppHandle,
     ) -> Self {
+        // デフォルトは非テスト用（非同期 spawn を行う）
         let client = reqwest::Client::builder()
             .user_agent(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:144.0) Gecko/20100101 Firefox/144.0",
             )
             .build()
             .unwrap();
+        let app_handle_arc: Arc<dyn AppHandleLike> = Arc::new(app_handle);
+        Self::new_with_client_and_apphandle(
+            receiver,
+            sender,
+            cfg,
+            app_handle_arc,
+            client,
+            true,
+            false,
+        )
+    }
+
+    /// テストやカスタム設定用に Client / AppHandle / 実行モードを注入できるコンストラクタ
+    pub fn new_with_client_and_apphandle(
+        receiver: tokio::sync::mpsc::Receiver<Command>,
+        sender: tokio::sync::mpsc::Sender<Command>,
+        cfg: Config,
+        app_handle: Arc<dyn AppHandleLike>,
+        client: reqwest::Client,
+        spawn_workers_async: bool,
+        simulate_workers: bool,
+    ) -> Self {
         Self {
             queue: VecDeque::new(),
             progress: Arc::new(Mutex::new(ScrapingProgress {
@@ -82,6 +112,8 @@ impl QueryQueueActor {
             worker_running: false,
             receiver,
             sender,
+            spawn_workers_async,
+            simulate_workers,
         }
     }
 
@@ -127,6 +159,7 @@ impl QueryQueueActor {
                         }
                     };
 
+                    // 無事起動した場合
                     if let Some(option) = self.queue.pop_front() {
                         let client = self.client.clone();
                         let progress = self.progress.clone(); // Arc<Mutex>
@@ -137,17 +170,45 @@ impl QueryQueueActor {
                         // フラグを立てて実行中にする
                         self.worker_running = true;
 
-                        // Workerに処理を委譲 (Spawnして非同期実行)
-                        tokio::spawn(async move {
-                            Worker::run(&option, &client, &progress, &cfg, &token, &app_handle)
+                        // テストモード: Worker を模擬してすぐ完了通知を送る
+                        if self.simulate_workers {
+                            let sender_clone = sender.clone();
+                            tokio::spawn(async move {
+                                // 即時完了を模擬
+                                let _ = sender_clone.send(Command::WorkerFinished).await;
+                            });
+                            continue;
+                        }
+
+                        // Workerに処理を委譲 (Spawnして非同期実行) または同期実行
+                        if self.spawn_workers_async {
+                            tokio::spawn(async move {
+                                Worker::run(
+                                    &option,
+                                    &client,
+                                    &progress,
+                                    &cfg,
+                                    &token,
+                                    &*app_handle,
+                                )
                                 .await
                                 .unwrap_or_else(|e| {
                                     println!("Error during scraping: {}", e);
                                 });
 
-                            // 完了通知を送る (RunNextではなくWorkerFinished)
-                            let _ = sender.send(Command::WorkerFinished).await;
-                        });
+                                // 完了通知を送る (RunNextではなくWorkerFinished)
+                                let _ = sender.send(Command::WorkerFinished).await;
+                            });
+                        } else {
+                            // 同期実行 (テストでの確認や制御がしやすい)
+                            Worker::run(&option, &client, &progress, &cfg, &token, &*app_handle)
+                                .await
+                                .unwrap_or_else(|e| {
+                                    println!("Error during scraping: {}", e);
+                                });
+
+                            let _ = self.sender.send(Command::WorkerFinished).await;
+                        }
                     } else {
                         // キューが空
                         let mut p = self.progress.lock().await;
@@ -167,6 +228,9 @@ impl QueryQueueActor {
                     }
                     let mut p = self.progress.lock().await;
                     p.status = ScrapingStatus::Stopped;
+                }
+                Command::IsWorkerRunning(responder) => {
+                    let _ = responder.send(self.worker_running);
                 }
                 Command::GetProgress(responder) => {
                     let p = self.progress.lock().await;
@@ -203,6 +267,31 @@ impl QueryQueueHandle {
         });
         Self { sender }
     }
+
+    /// テスト用 / カスタム用コンストラクタ。AppHandle は trait オブジェクトで渡す。
+    pub fn new_with_client_and_app(
+        cfg: &Config,
+        app_handle: Arc<dyn AppHandleLike>,
+        client: reqwest::Client,
+        spawn_workers_async: bool,
+        simulate_workers: bool,
+    ) -> Self {
+        let (sender, receiver) = tokio::sync::mpsc::channel(100);
+        let mut actor = QueryQueueActor::new_with_client_and_apphandle(
+            receiver,
+            sender.clone(),
+            cfg.clone(),
+            app_handle,
+            client,
+            spawn_workers_async,
+            simulate_workers,
+        );
+        // Use tokio runtime for tests to control lifetime (tests use tokio::test)
+        tokio::spawn(async move {
+            actor.run().await;
+        });
+        Self { sender }
+    }
     /// キューにオプションを追加します（非同期に enqueue されます）。
     pub async fn add(&self, option: ScrapingOption) {
         let _ = self.sender.send(Command::Add(option)).await;
@@ -220,6 +309,13 @@ impl QueryQueueHandle {
     /// 全体の停止を要求します（Actor 側でトークンをキャンセルする）。
     pub async fn stop(&self) {
         let _ = self.sender.send(Command::Stop).await;
+    }
+
+    /// テスト用: Worker が動作中かどうかを問い合わせます。
+    pub async fn is_worker_running(&self) -> bool {
+        let (responder, receiver) = tokio::sync::oneshot::channel();
+        let _ = self.sender.send(Command::IsWorkerRunning(responder)).await;
+        receiver.await.unwrap_or(false)
     }
 
     /// 進捗を問い合わせて返します（キュー長と進捗）。
@@ -252,5 +348,103 @@ impl QueryQueueHandle {
     pub async fn is_empty(&self) -> bool {
         let (queue_length, _) = self.get_progress().await;
         queue_length == 0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+    use std::sync::Arc;
+    use tokio::time::{timeout, Duration};
+
+    struct DummyAppHandle {
+        base: std::path::PathBuf,
+    }
+
+    impl DummyAppHandle {
+        fn new(base: std::path::PathBuf) -> Self {
+            Self { base }
+        }
+    }
+
+    impl AppHandleLike for DummyAppHandle {
+        fn document_dir(&self) -> Option<std::path::PathBuf> {
+            Some(self.base.clone())
+        }
+    }
+
+    fn make_option() -> ScrapingOption {
+        ScrapingOption {
+            tags: vec!["test".into()],
+            search_mode: "mode".into(),
+            scd: "".into(),
+            ecd: "".into(),
+            detailed: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn simulate_queue_processing_completes_all_items() {
+        let cfg = Config::default();
+        let temp = std::env::temp_dir().join("pixraper_test");
+        let app = Arc::new(DummyAppHandle::new(temp));
+        let client = reqwest::Client::builder().build().unwrap();
+
+        // simulate_workers=true で実際の Worker::run を実行せず、完了通知だけを送る
+        let handle = QueryQueueHandle::new_with_client_and_app(&cfg, app, client, true, true);
+
+        handle.add(make_option()).await;
+        handle.add(make_option()).await;
+
+        let token = tokio_util::sync::CancellationToken::new();
+        handle.start(token.clone()).await;
+
+        // ある程度の猶予をもってキューが空になるのを待つ
+        let res = timeout(Duration::from_secs(3), async {
+            loop {
+                if handle.is_empty().await {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await;
+
+        assert!(res.is_ok(), "Queue did not process in time");
+        let (q_len, progress) = handle.get_progress().await;
+        assert_eq!(q_len, 0);
+        assert_eq!(progress.status, ScrapingStatus::Stopped);
+    }
+
+    #[tokio::test]
+    async fn stop_signal_stops_processing() {
+        let cfg = Config::default();
+        let temp = std::env::temp_dir().join("pixraper_test_stop");
+        let app = Arc::new(DummyAppHandle::new(temp));
+        let client = reqwest::Client::builder().build().unwrap();
+
+        let handle = QueryQueueHandle::new_with_client_and_app(&cfg, app, client, true, true);
+
+        handle.add(make_option()).await;
+
+        let token = tokio_util::sync::CancellationToken::new();
+        handle.start(token.clone()).await;
+
+        // すぐに停止を送る
+        handle.stop().await;
+
+        let res = timeout(Duration::from_secs(2), async {
+            loop {
+                let (_, progress) = handle.get_progress().await;
+                if progress.status == ScrapingStatus::Stopped {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await;
+
+        assert!(res.is_ok(), "Stop did not take effect in time");
     }
 }
