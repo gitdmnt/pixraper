@@ -2,9 +2,11 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import { readTextFile } from "@tauri-apps/plugin-fs";
 
+  import Button from "$lib/components/Button.svelte";
+
   import type { CsvRow } from "./type.d.ts";
   import RawCSV from "./rawCSV.svelte";
-  import TagRanking from "./tagRanking.svelte";
+  import TagRanking from "./tagRanking/main.svelte";
 
   let tab = 0;
   let headers: string[] = [];
@@ -85,78 +87,46 @@
   }
 </script>
 
-<div class="container">
-  <div class="tabs">
-    <button on:click={() => (tab = 0)} class:active={tab === 0}>
-      Tag Ranking
-    </button>
-    <button on:click={() => (tab = -1)} class:active={tab === -1}>
-      Raw CSV
-    </button>
-  </div>
+<div class="flex flex-row w-full h-full gap-4 p-4 app-content">
+  <aside class="md-card w-40 p-3 flex flex-col items-center">
+    <div class="text-xs font-medium text-neutral-600 mb-2">Analytics Menu</div>
+    <div class="flex flex-col gap-2">
+      <div class="md-segment flex-col">
+        <button onclick={() => (tab = 0)} class:active={tab === 0}
+          >Tag Ranking</button
+        >
+        <button onclick={() => (tab = -1)} class:active={tab === -1}
+          >Raw CSV</button
+        >
+      </div>
+    </div>
 
-  <div class="analytics-container">
+    <div class="mt-auto">
+      <Button variant="contained" onclick={selectAndParseCsv}>Import CSV</Button
+      >
+    </div>
+  </aside>
+
+  <main class="flex flex-col flex-1 gap-4">
     {#if errorMessage}
-      <p class="error">Error: {errorMessage}</p>
+      <div class="md-card p-4 text-sm text-red-600">Error: {errorMessage}</div>
     {/if}
 
     {#if rows.length > 0}
-      {#if tab === 0}
-        <TagRanking {rows} />
-      {:else}
-        <RawCSV {headers} {rows} />
-      {/if}
+      <div class="md-card p-4 flex-1">
+        {#if tab === 0}
+          <TagRanking {rows} />
+        {:else}
+          <RawCSV {headers} {rows} />
+        {/if}
+      </div>
     {:else}
-      <p>CSVファイルを選択してデータを表示してください。</p>
+      <div class="md-card p-6 text-neutral-600">
+        CSVファイルを選択してデータを表示してください。
+      </div>
     {/if}
-  </div>
-
-  <button class="select-csv-button" on:click={selectAndParseCsv}
-    >CSVファイルを選択</button
-  >
+  </main>
 </div>
 
 <style>
-  .container {
-    display: flex;
-    flex-direction: column;
-    width: 70dvw;
-    height: 70dvh;
-  }
-  .tabs {
-    display: flex;
-    margin-bottom: -1px;
-    > button {
-      background-color: #f8f8f8;
-      color: #666;
-      &.active {
-        border-bottom: none;
-        color: #222;
-        background-color: white;
-        z-index: 1;
-      }
-      + button {
-        border-left: none;
-      }
-    }
-  }
-  button {
-    padding: 0.5rem 1rem;
-    cursor: pointer;
-    border: 1px solid #ccc;
-  }
-  .error {
-    color: red;
-  }
-  .analytics-container {
-    flex: 1;
-    overflow: auto;
-    background-color: white;
-    border: 1px solid #ccc;
-    display: flex;
-    flex-direction: column;
-  }
-  .select-csv-button {
-    margin-top: -1px;
-  }
 </style>

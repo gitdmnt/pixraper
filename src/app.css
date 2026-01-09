@@ -1,1 +1,85 @@
 @import "tailwindcss";
+
+/* Material3-like design tokens (simple approximation) */
+:root {
+    --md-surface: #ffffff;
+    --md-on-surface: #111827;
+    /* neutral-900 */
+    --md-primary: #6750a4;
+    --md-on-primary: #ffffff;
+    --md-surface-variant: #f4effb;
+    --md-outline: #e6dff6;
+    --md-elev-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.04);
+}
+
+/* Small, reusable Material3-like components */
+.md-surface {
+    background-color: var(--md-surface);
+    color: var(--md-on-surface);
+}
+
+.md-card {
+    background-color: var(--md-surface);
+    border-radius: 12px;
+    box-shadow: var(--md-elev-shadow);
+}
+
+.md-segment {
+    background: var(--md-surface-variant);
+    padding: 4px;
+    border-radius: 20px;
+    display: flex;
+    gap: 4px;
+}
+
+.md-segment button {
+    background: transparent;
+    border: none;
+    padding: 6px 14px;
+    border-radius: 20px;
+    color: #374151;
+    /* neutral-700 */
+    font-size: 0.8125rem;
+    /* text-sm */
+    cursor: pointer;
+    transition: all 150ms ease-in-out;
+}
+
+.md-segment button:hover {
+    font-weight: 600;
+}
+
+.md-segment button.active {
+    background-color: var(--md-primary);
+    color: var(--md-on-primary);
+    font-weight: 700;
+    box-shadow: var(--md-elev-shadow);
+}
+
+/* Primary elevated button */
+.btn-md {
+    padding: 10px 16px;
+    border-radius: 10px;
+    background-color: var(--md-primary);
+    color: var(--md-on-primary);
+    font-weight: 600;
+    box-shadow: var(--md-elev-shadow);
+    transition: transform .08s ease, box-shadow .12s ease;
+}
+
+.btn-md:active {
+    transform: translateY(1px);
+}
+
+/* App shell adjustments */
+.app-content {
+    background-color: #f8fafc;
+    /* neutral-50 */
+    min-height: 0;
+    /* allow flex children to size properly */
+}
+
+/* Ensure scrollable area displays nicely */
+.scrollable {
+    -webkit-overflow-scrolling: touch;
+}
