@@ -17,8 +17,6 @@
   let showNotAIGenerated = true;
   let showXRestricted = true;
   let showNotXRestricted = true;
-  let useTopK: boolean = false;
-  let topK: number = 1000;
   let SearchQuery: string = "";
 
   let filteredTags: {
