@@ -1,21 +1,31 @@
 <script lang="ts">
+  import { invoke } from "@tauri-apps/api/core";
   import TopAppBar from "$lib/components/TopAppBar.svelte";
   import Button from "$lib/components/Button.svelte";
   import TagList from "$lib/components/TagList.svelte";
   import FiltersPanel from "./FiltersPanel.svelte";
   import OverviewCard from "./OverviewCard.svelte";
 
+  // Parent still passes rows, we use it for stats only (or triggering re-fetch)
   export let rows: any[] = [];
 
-  // ユーザーが変更するフィルターやソートの条件
+  // Data from backend
+  let filteredTags: {
+    tag: string;
+    count: number;
+    viewCount: number;
+    bookmarkCount: number;
+  }[] = [];
+
+  // Sort & Filters
   let weightedType:
     | "workCount"
     | "bookmarkCount"
     | "viewCount"
     | "bookmarkPerWork"
     | "viewPerWork"
-    | "bookmarkPerView"
-    | undefined = "workCount";
+    | "bookmarkPerView" = "workCount";
+
   let worksCountCutoff = 5;
   let showAIGenerated = true;
   let showNotAIGenerated = true;
@@ -23,153 +33,85 @@
   let showNotXRestricted = true;
   let SearchQuery: string = "";
 
-  let filteredTags: {
-    tag: string;
-    count: number;
-    viewCount: number;
-    bookmarkCount: number;
-  }[] = [];
-  let tableItems: any[];
+  let isLoading = false;
+  let error: string | null = null;
+  let perfMs = 0;
 
-  let page = 0;
-  let itemsPerPage = 10;
-
-  // Performance measurement: measure each step and expose recent timings
-  let perfTimings: { name: string; ms: number }[] = [];
-  function pushPerf(name: string, ms: number) {
-    perfTimings.unshift({ name, ms });
-    if (perfTimings.length > 20) perfTimings.length = 20;
-    // keep console trace for quick inspection
-    console.debug("perf", name, ms.toFixed(2) + "ms");
-  }
-
-  // main reactive block: recompute filteredTags and tableItems when inputs change
-  $: {
+  // Fetch logic
+  const fetchData = async () => {
+    isLoading = true;
+    error = null;
     const t0 = performance.now();
+    const filters = {
+      showAiGenerated: showAIGenerated,
+      showNotAiGenerated: showNotAIGenerated,
+      showXRestricted: showXRestricted,
+      showNotXRestricted: showNotXRestricted,
+      searchQuery: SearchQuery.trim() === "" ? null : SearchQuery.trim(),
+    };
 
-    // 1. O(n); AIとかR-18とかをフィルター
-    const filteredRows = rows.filter((row) => {
-      if (!showAIGenerated && row.generatedByAI) return false;
-      if (!showNotAIGenerated && !row.generatedByAI) return false;
-      if (!showXRestricted && row.isXRestricted) return false;
-      if (!showNotXRestricted && !row.isXRestricted) return false;
-      return true;
-    });
-    const t1 = performance.now();
+    const res = await invoke<
+      {
+        tag: string;
+        count: number;
+        viewCount: number;
+        bookmarkCount: number;
+      }[]
+    >("calculate_tag_ranking", {
+      filters,
+      sortKey: weightedType,
+    })
+      .then((r) => (filteredTags = r))
+      .catch((e) => {
+        console.error(e);
+        // If error is "No dataset loaded", treat as empty or show error
+        error = String(e);
+      })
+      .finally(() => {
+        perfMs = performance.now() - t0;
+        isLoading = false;
+      });
+  };
 
-    // 2. O(n*m); タグごとの統計情報 (作品数、閲覧数、ブックマーク数など) を集計
-    let tagStats = (() => {
-      const worksCounts: Record<
-        string,
-        { count: number; viewCount: number; bookmarkCount: number }
-      > = {};
-      const query = SearchQuery.toLowerCase();
-
-      for (const row of filteredRows) {
-        for (const tag of row.tags) {
-          if (query && !tag.toLowerCase().includes(query)) {
-            continue;
-          }
-
-          const entry =
-            worksCounts[tag] ||
-            (worksCounts[tag] = { count: 0, viewCount: 0, bookmarkCount: 0 });
-          entry.count += 1;
-          entry.viewCount += row.viewCount;
-          entry.bookmarkCount += row.bookmarkCount;
-        }
-      }
-
-      return Object.entries(worksCounts).map(
-        ([tag, { count, viewCount, bookmarkCount }]) => ({
-          tag,
-          count,
-          viewCount,
-          bookmarkCount,
-        })
-      );
-    })();
-    const t2 = performance.now();
-
-    // 3. O(n log n); 統計情報の値に基いてタグをソート
-    let sortedTags = (() => {
-      const compareFn = (a: any, b: any) => {
-        switch (weightedType) {
-          case "bookmarkCount":
-            return b.bookmarkCount - a.bookmarkCount;
-          case "viewCount":
-            return b.viewCount - a.viewCount;
-          case "bookmarkPerWork":
-            return b.bookmarkCount / b.count - a.bookmarkCount / a.count;
-          case "viewPerWork":
-            return b.viewCount / b.count - a.viewCount / a.count;
-          case "bookmarkPerView":
-            return (
-              b.bookmarkCount / b.viewCount - a.bookmarkCount / a.viewCount
-            );
-          case "workCount":
-          default:
-            return b.count - a.count;
-        }
-      };
-
-      return tagStats.sort(compareFn);
-    })();
-    const t3 = performance.now();
-
-    // 4. O(n); 作品数カットオフでフィルター
-    filteredTags = sortedTags.filter((tag) => {
-      if (
-        weightedType === "bookmarkPerView" ||
-        weightedType === "bookmarkPerWork" ||
-        weightedType === "viewPerWork"
-      ) {
-        return tag.count >= worksCountCutoff;
-      }
-      return true;
-    });
-    const t4 = performance.now();
-
-    // record timings
-    pushPerf("filter", t1 - t0);
-    pushPerf("aggregate", t2 - t1);
-    pushPerf("sort", t3 - t2);
-    pushPerf("cutoff", t4 - t3);
-
-    // optional: print a concise table
-    console.table({
-      filter: t1 - t0,
-      aggregate: t2 - t1,
-      sort: t3 - t2,
-      cutoff: t4 - t3,
-    });
+  // Watchers
+  $: {
+    // We depend on these variables for fetching
+    const _ = [
+      weightedType,
+      showAIGenerated,
+      showNotAIGenerated,
+      showXRestricted,
+      showNotXRestricted,
+      SearchQuery,
+      rows, // re-fetch if dataset changes
+    ];
+    if (typeof window !== "undefined") {
+      // debounce slightly? or just run
+      fetchData();
+    }
   }
 
-  // derive tableItems from filteredTags for the generic TagList
-  $: tableItems = filteredTags.map((tag) => {
-    let value = (() => {
-      if (weightedType === "workCount") {
-        return tag.count;
-      } else if (weightedType === "bookmarkCount") {
-        return tag.bookmarkCount;
-      } else if (weightedType === "viewCount") {
-        return tag.viewCount;
-      } else if (weightedType === "bookmarkPerView") {
-        return `${(tag.bookmarkCount / tag.viewCount).toFixed(
-          2
-        )} (${tag.bookmarkCount} bookmarks / ${tag.viewCount} views, n=${tag.count})`;
-      } else if (weightedType === "bookmarkPerWork") {
-        return `${(tag.bookmarkCount / tag.count).toFixed(
-          2
-        )} (${tag.bookmarkCount} bookmarks / ${tag.count} works, n=${tag.count})`;
-      } else if (weightedType === "viewPerWork") {
-        return `${(tag.viewCount / tag.count).toFixed(2)} (${tag.viewCount} views / ${
-          tag.count
-        } works, n=${tag.count})`;
-      } else {
-        return tag.count;
-      }
-    })();
+  // Client-side filtering for cutoff (backend doesn't support it yet)
+  $: displayTags = filteredTags.filter((t) => t.count >= worksCountCutoff);
+
+  // Map to Table Items (for TagList)
+  $: tableItems = displayTags.map((tag) => {
+    let value: number | string = 0;
+    if (weightedType === "workCount") {
+      value = tag.count;
+    } else if (weightedType === "bookmarkCount") {
+      value = tag.bookmarkCount;
+    } else if (weightedType === "viewCount") {
+      value = tag.viewCount;
+    } else if (weightedType === "bookmarkPerView") {
+      value = `${(tag.bookmarkCount / Math.max(1, tag.viewCount)).toFixed(2)} (${tag.bookmarkCount}/${tag.viewCount} views)`;
+    } else if (weightedType === "bookmarkPerWork") {
+      value = `${(tag.bookmarkCount / Math.max(1, tag.count)).toFixed(2)} (${tag.bookmarkCount}/${tag.count} works)`;
+    } else if (weightedType === "viewPerWork") {
+      value = `${(tag.viewCount / Math.max(1, tag.count)).toFixed(2)} (${tag.viewCount}/${tag.count} works)`;
+    } else {
+      value = tag.count;
+    }
 
     return {
       title: tag.tag,
@@ -178,23 +120,18 @@
     };
   });
 
-  // quick lookup map from tag -> stats for rendering subtitles (Not needed for new TagList, but keeping if other parts use it, seemingly not?)
-  // Actually checking previous code, tagMap was mostly for TagList.
-  // $: tagMap = new Map(filteredTags.map((t) => [t.tag, t]));
-  // We can remove tagMap if it's unused. Checking file context... it was used in <TagList {tableItems} {tagMap} ... />.
-  // I will comment it out or remove it if I'm sure. I'll remove the prop passing in template.
+  // Pagination
+  let page = 0;
+  let itemsPerPage = 10;
 
-  // pagination helpers
   const setPage = (p: number) => {
     const maxPage = Math.max(
       0,
       Math.floor((tableItems.length - 1) / itemsPerPage)
     );
-    const clamped = Math.max(0, Math.min(p, maxPage));
-    page = clamped;
+    page = Math.max(0, Math.min(p, maxPage));
   };
 
-  // keep page within range when items change
   $: {
     const maxPage = Math.max(
       0,
@@ -207,8 +144,10 @@
 <div class="w-full h-full flex flex-col gap-4">
   <TopAppBar title="Tag Ranking">
     <div slot="actions" class="flex items-center gap-3">
+      <span class="text-xs text-muted whitespace-nowrap"
+        >Fetch: {perfMs.toFixed(0)}ms</span
+      >
       <input
-        id="SearchQuery"
         type="text"
         placeholder="Search tags…"
         bind:value={SearchQuery}
@@ -225,102 +164,50 @@
     </div>
   </TopAppBar>
 
-  <div class="flex gap-4 items-start">
-    <main class="flex-1 flex flex-col min-h-0 gap-3">
-      {#if filteredTags.length > 0}
+  <div class="flex gap-4 items-start flex-1 min-h-0">
+    <main class="flex-1 flex flex-col min-h-0 gap-3 h-full">
+      {#if isLoading && filteredTags.length === 0}
+        <div class="flex items-center justify-center h-full">Loading...</div>
+      {:else if error && !error.includes("No dataset")}
+        <div class="p-4 bg-red-50 text-red-600 rounded">{error}</div>
+      {:else if tableItems.length > 0}
         <TagList items={tableItems} {itemsPerPage} bind:page />
+
+        <div class="flex items-center justify-between mt-2 px-2 pb-2">
+          <div class="text-sm text-muted">
+            Showing {page * itemsPerPage + 1} - {Math.min(
+              (page + 1) * itemsPerPage,
+              tableItems.length
+            )} of {tableItems.length}
+          </div>
+          <div class="flex gap-2">
+            <Button variant="outlined" onclick={() => setPage(page - 1)}
+              >Previous</Button
+            >
+            <Button variant="contained" onclick={() => setPage(page + 1)}
+              >Next</Button
+            >
+          </div>
+        </div>
       {:else}
-        <div class="md-card p-6">
-          <p class="text-center">No data available for tag ranking.</p>
+        <div class="md-card p-8 text-center text-muted">
+          {#if error}
+            {error}
+          {:else}
+            No data found. Upload a CSV file first?
+          {/if}
         </div>
       {/if}
-      <div class="flex items-center justify-between mt-2">
-        <div class="text-sm text-muted">
-          Showing {page * itemsPerPage + 1} - {Math.min(
-            (page + 1) * itemsPerPage,
-            tableItems.length
-          )} of {tableItems.length}
-        </div>
-        <div class="flex gap-2">
-          <Button
-            variant="outlined"
-            onclick={() => setPage(Math.max(0, page - 1))}>Previous</Button
-          >
-          <Button
-            variant="contained"
-            onclick={() =>
-              setPage(
-                Math.min(
-                  Math.floor((tableItems.length - 1) / itemsPerPage),
-                  page + 1
-                )
-              )}>Next</Button
-          >
-        </div>
-      </div>
     </main>
 
-    <aside class="flex flex-col gap-4">
+    <aside class="flex flex-col gap-4 w-72 shrink-0 overflow-y-auto">
       <FiltersPanel
         bind:showAIGenerated
         bind:showNotAIGenerated
         bind:showXRestricted
         bind:showNotXRestricted
+        bind:worksCountCutoff
       />
-
-      <div class="md-card p-4 shrink-0 hidden md:flex flex-col gap-3">
-        <div class="font-medium">Quick Controls</div>
-        <div class="text-sm">Ranking Type</div>
-        <select bind:value={weightedType} class="md-select">
-          <option value="workCount">Work Count</option>
-          <option value="bookmarkCount">Total Bookmark</option>
-          <option value="viewCount">Total View</option>
-          <option value="bookmarkPerWork">Bookmark per Works</option>
-          <option value="viewPerWork">View per Works</option>
-          <option value="bookmarkPerView">Bookmark percentage per View</option>
-        </select>
-        <div class="mt-auto text-xs text-muted">
-          Tip: Use search to filter tags quickly.
-        </div>
-      </div>
-      <OverviewCard
-        rowsLength={rows.length}
-        filteredTagsLength={filteredTags.length}
-        {perfTimings}
-      ></OverviewCard>
     </aside>
   </div>
 </div>
-
-<style>
-  /* Card base - use existing CSS variables for colors */
-  .md-card {
-    background: var(--md-surface);
-    color: var(--md-on-surface);
-    border-radius: 12px;
-    box-shadow:
-      0 1px 3px rgba(16, 24, 40, 0.06),
-      0 1px 2px rgba(16, 24, 40, 0.02);
-  }
-
-  .md-search-input {
-    background: var(--md-surface-variant, #f3f4f6);
-    border-radius: 20px;
-    padding: 8px 12px;
-    border: 1px solid var(--md-outline);
-    min-width: 220px;
-  }
-
-  .md-select {
-    padding: 8px 10px;
-    border-radius: 8px;
-    border: 1px solid var(--md-outline);
-    background: var(--md-surface);
-  }
-
-  .text-muted {
-    color: var(--md-on-surface-variant, #6b7280);
-  }
-
-  /* old table styles removed */
-</style>

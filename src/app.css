@@ -13,6 +13,35 @@
 }
 
 /* Small, reusable Material3-like components */
+
+.md-card {
+    background: var(--md-surface);
+    color: var(--md-on-surface);
+    border-radius: 12px;
+    box-shadow:
+        0 1px 3px rgba(16, 24, 40, 0.06),
+        0 1px 2px rgba(16, 24, 40, 0.02);
+}
+
+.md-search-input {
+    background: var(--md-surface-variant, #f3f4f6);
+    border-radius: 20px;
+    padding: 8px 12px;
+    border: 1px solid var(--md-outline);
+    min-width: 200px;
+}
+
+.md-select {
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--md-outline);
+    background: var(--md-surface);
+}
+
+.text-muted {
+    color: var(--md-on-surface-variant, #6b7280);
+}
+
 .md-surface {
     background-color: var(--md-surface);
     color: var(--md-on-surface);

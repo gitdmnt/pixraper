@@ -1,22 +1,15 @@
 <script lang="ts">
-  export let rowsLength: number = 0;
-  export let filteredTagsLength: number = 0;
-  export let perfTimings: { name: string; ms: number }[] = [];
+  export let totalWorks: number = 0;
+  export let totalBookmarks: number = 0;
+  export let totalViews: number = 0;
+  export let totalTags: number = 0;
 </script>
 
 <div class="md-card p-3">
   <div class="font-medium">Overview</div>
   <div class="text-sm text-muted">
-    CSV rows: {rowsLength} · Filtered tags: {filteredTagsLength}
-  </div>
-
-  <div class="mt-2 text-xs">
-    <div class="font-medium">Perf (recent)</div>
-    <ul>
-      {#each perfTimings.slice(0, 5) as p}
-        <li>{p.name}: {p.ms.toFixed(2)} ms</li>
-      {/each}
-    </ul>
+    Total works: {totalWorks} · Total bookmarks: {totalBookmarks} · Total views:
+    {totalViews} · Total tags: {totalTags}
   </div>
 </div>
 
