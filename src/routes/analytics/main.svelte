@@ -16,7 +16,7 @@
 
   let errorMessage: string | null = null;
 
-  async function selectAndParseCsv() {
+  const selectAndParseCsv = async () => {
     errorMessage = null;
     headers = [];
     rows = [];
@@ -85,7 +85,7 @@
       errorMessage =
         err instanceof Error ? err.message : "An unknown error occurred.";
     }
-  }
+  };
 </script>
 
 <div class="flex flex-row w-full h-full gap-4 p-4 app-content">
