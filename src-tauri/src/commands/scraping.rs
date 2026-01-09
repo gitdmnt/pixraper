@@ -108,8 +108,6 @@ pub async fn start_rough_scraping(
         return Ok("Rough scraping was cancelled by user.".to_string());
     }
 
-    // 出力ファイルパスの決定。`AppHandle::path()` を使うために `Manager` が導入されている。
-
     // CSV 保存は別関数に委譲（責務の分離）
     crate::scraper::save_as_csv(&res, &app_handle)
         .await
