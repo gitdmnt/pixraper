@@ -8,19 +8,23 @@
     scd: Temporal.Now.plainDateISO().toString(),
     ecd: Temporal.Now.plainDateISO().toString(),
   };
-  let fixedTags = [] as string[];
-  let parallelTags = "";
 
   const addTag = (e: KeyboardEvent) => {
     if (e.key === "Enter") {
       e.preventDefault();
       const input = e.target as HTMLInputElement;
       const newTag = input.value.trim();
-      if (newTag && !fixedTags.includes(newTag)) {
-        fixedTags = [...fixedTags, newTag];
+      if (newTag && !scrapingOption.tags.includes(newTag)) {
+        scrapingOption.tags = [...scrapingOption.tags, newTag];
         input.value = "";
       }
+      console.log("Tags:", scrapingOption.tags);
     }
+  };
+
+  const removeTag = (tag: string) => {
+    scrapingOption.tags = scrapingOption.tags.filter((t) => t !== tag);
+    console.log("Tags:", scrapingOption.tags);
   };
 
   const startScraping = () => {
@@ -68,34 +72,18 @@
     <div class="tags-input">
       <label for="tags">Tags to Scrape</label>
       <div class="tags">
-        <div class="fixed-tags">
-          {#each fixedTags as tag}
-            <span class="fixed-tag">
-              <span>{tag}</span>
-              <button
-                onclick={() => (fixedTags = fixedTags.filter((t) => t !== tag))}
-                >x</button
-              >
-            </span>
-          {/each}
-          <div class="add-tag">
-            <input
-              type="text"
-              placeholder="Enter tag and press Enter"
-              onkeydown={addTag}
-            />
-          </div>
-        </div>
-        <span>×</span>
-        <div class="parallel-tags">
-          <div class="add-tag">
-            <textarea
-              placeholder="Separate multiple tags with commas/line breaks"
-              cols="30"
-              rows="10"
-              bind:value={parallelTags}
-            ></textarea>
-          </div>
+        {#each scrapingOption.tags as tag}
+          <span class="tag">
+            <span>{tag}</span>
+            <button onclick={() => removeTag(tag)}>x</button>
+          </span>
+        {/each}
+        <div class="add-tag">
+          <input
+            type="text"
+            placeholder="Enter tag and press Enter"
+            onkeydown={addTag}
+          />
         </div>
       </div>
     </div>
