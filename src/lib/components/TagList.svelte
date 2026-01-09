@@ -2,6 +2,7 @@
   export let items: { title: string; subtitle?: string; value?: any }[] = [];
   export let itemsPerPage: number = 10;
   export let page: number = 0; // two-way bind from parent
+  export let onclick: ((item: any) => void) | null = null;
 
   // total pages reactive calculation
   $: totalPages = Math.max(1, Math.ceil(items.length / itemsPerPage));
@@ -39,7 +40,7 @@
 <!-- svelte-ignore a11y-no-static-element-interactions -->
 <div
   class="md-card p-2 overflow-auto flex-1 flex flex-col"
-  on:wheel={handleWheel}
+  onwheel={handleWheel}
 >
   {#if items.length === 0}
     <div class="flex-1 flex items-center justify-center text-gray-500 text-sm">
@@ -48,7 +49,11 @@
   {:else}
     <div class="flex flex-col gap-1">
       {#each items.slice(page * itemsPerPage, (page + 1) * itemsPerPage) as item, idx}
-        <div class="md-list-item">
+        <button
+          type="button"
+          class="md-list-item"
+          onclick={() => onclick && onclick(item)}
+        >
           <div class="leading text-sm text-gray-500 font-mono w-8 text-center">
             {page * itemsPerPage + idx + 1}
           </div>
@@ -70,7 +75,7 @@
               <span class="md-chip text-sm">{item.value}</span>
             </div>
           {/if}
-        </div>
+        </button>
       {/each}
     </div>
 
@@ -89,8 +94,21 @@
     padding: 8px;
     border-radius: 8px;
     transition: background-color 0.2s;
+    appearance: none;
+    border: none;
+    background: transparent;
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
   }
   .md-list-item:hover {
     background-color: rgba(0, 0, 0, 0.05);
+  }
+  .md-list-item:focus {
+    outline: none;
+  }
+  .md-list-item:focus-visible {
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
+    border-radius: 8px;
   }
 </style>

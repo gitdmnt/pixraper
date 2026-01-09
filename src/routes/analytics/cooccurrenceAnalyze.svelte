@@ -44,7 +44,7 @@
   $: if (selectedIndex >= 0 && selectedIndex >= suggestedTags.length)
     selectedIndex = suggestedTags.length - 1;
 
-  function handleKeyDown(e: KeyboardEvent) {
+  const handleKeyDown = (e: KeyboardEvent) => {
     if (!suggestedTags || suggestedTags.length === 0) return;
 
     if (e.key === "ArrowDown") {
@@ -75,7 +75,7 @@
     } else if (e.key === "Escape") {
       selectedIndex = -1;
     }
-  }
+  };
 
   const selectTag = (tag: string) => {
     targetTag = tag;
@@ -119,6 +119,10 @@
       })
       .sort((a, b) => b.rawCount - a.rawCount)
       .map(({ title, subtitle, value }) => ({ title, subtitle, value }));
+  };
+
+  const handleTagClick = (item: any) => {
+    selectTag(item.title);
   };
 </script>
 
@@ -182,7 +186,7 @@
     class="flex-1 flex flex-col min-h-0 bg-white rounded-xl border border-neutral-200 overflow-hidden"
   >
     {#if targetTag && cooccurrenceResults.length > 0}
-      <TagList items={cooccurrenceResults} />
+      <TagList items={cooccurrenceResults} onclick={handleTagClick} />
     {:else if targetTag}
       <div class="p-8 text-center text-neutral-500">
         <p>共起するタグが見つかりませんでした。</p>
