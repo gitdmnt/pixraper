@@ -16,7 +16,7 @@ use crate::scraper::types::{ItemRecord, ScrapingOption, ScrapingProgress, Scrapi
 
 /// ラフ検索（ページ単位で複数ページを取得）を実行する公開API
 /// 実装の意図:
-/// - 実際のページ巡回ロジックは `ScrapingOption::fetch_rough` に委譲して再利用する
+/// - 実際のページ巡回ロジックは `ScrapingOption::fetch` に委譲して再利用する
 pub async fn fetch_search_result(
     cfg: &Config,
     scraping_option: &ScrapingOption,
@@ -35,9 +35,7 @@ pub async fn fetch_search_result(
         current: None,
     }));
 
-    scraping_option
-        .fetch_rough(&client, &progress, cfg, token)
-        .await
+    scraping_option.fetch(&client, &progress, cfg, token).await
 }
 
 /// イラスト詳細を取得する公開API
