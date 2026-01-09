@@ -9,6 +9,7 @@
 
 use std::sync::Arc;
 
+use std::collections::VecDeque;
 use tokio::sync::Mutex;
 
 use crate::config::Config;
@@ -31,11 +32,15 @@ enum Command {
     Stop,
     /// 進捗取得用の oneshot レスポンダを渡す。
     GetProgress(tokio::sync::oneshot::Sender<(usize, ScrapingProgress)>),
+    /// キューの内容を取得する。
+    GetQueue(tokio::sync::oneshot::Sender<Vec<ScrapingOption>>),
+    /// キューから特定のインデックスの要素を削除する。
+    Remove(usize),
 }
 
 /// Actor の実体。キューと進捗、HTTP クライアント、設定を保持する。
 struct QueryQueueActor {
-    queue: Vec<ScrapingOption>,
+    queue: VecDeque<ScrapingOption>,
     progress: ScrapingProgress,
     client: reqwest::Client,
     cfg: Config,
@@ -60,7 +65,7 @@ impl QueryQueueActor {
             .build()
             .unwrap();
         Self {
-            queue: Vec::new(),
+            queue: VecDeque::new(),
             progress: ScrapingProgress {
                 status: ScrapingStatus::Stopped,
                 total: None,
@@ -79,7 +84,7 @@ impl QueryQueueActor {
         while let Some(command) = self.receiver.recv().await {
             match command {
                 Command::Add(option) => {
-                    self.queue.push(option);
+                    self.queue.push_back(option);
                 }
                 Command::Clear => {
                     self.queue.clear();
@@ -108,7 +113,7 @@ impl QueryQueueActor {
                         }
                     };
 
-                    if let Some(option) = self.queue.pop() {
+                    if let Some(option) = self.queue.pop_front() {
                         // Workerに処理を委譲
                         Worker::run(
                             &option,
@@ -140,6 +145,14 @@ impl QueryQueueActor {
                 }
                 Command::GetProgress(responder) => {
                     let _ = responder.send((self.queue.len(), self.progress.clone()));
+                }
+                Command::GetQueue(responder) => {
+                    let _ = responder.send(self.queue.iter().cloned().collect());
+                }
+                Command::Remove(index) => {
+                    if index < self.queue.len() {
+                        self.queue.remove(index);
+                    }
                 }
             }
         }
@@ -196,6 +209,19 @@ impl QueryQueueHandle {
             },
         ))
     }
+
+    /// キューの内容を取得して返します。
+    pub async fn get_queue(&self) -> Vec<ScrapingOption> {
+        let (responder, receiver) = tokio::sync::oneshot::channel();
+        let _ = self.sender.send(Command::GetQueue(responder)).await;
+        receiver.await.unwrap_or_else(|_| Vec::new())
+    }
+
+    /// 特定のインデックスの要素を削除します。
+    pub async fn remove(&self, index: usize) {
+        let _ = self.sender.send(Command::Remove(index)).await;
+    }
+
     /// キューが空かどうかを判定します（ユーティリティ）。
     pub async fn is_empty(&self) -> bool {
         let (queue_length, _) = self.get_progress().await;

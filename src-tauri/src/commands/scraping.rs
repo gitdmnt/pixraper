@@ -31,6 +31,15 @@ pub async fn clear_queue(queue: State<'_, ScrapingHandle>) -> Result<(), String>
     Ok(())
 }
 
+#[tauri::command]
+pub async fn remove_queue_item(
+    queue: State<'_, ScrapingHandle>,
+    index: usize,
+) -> Result<(), String> {
+    queue.remove(index).await;
+    Ok(())
+}
+
 /// キューの先頭要素を順次実行します。
 ///
 /// 実装の意図:
@@ -64,6 +73,15 @@ pub async fn get_progress(
 ) -> Result<crate::scraper::ScrapingProgress, String> {
     let (_, progress) = queue.get_progress().await;
     Ok(progress)
+}
+
+/// キューの現在の内容を取得します。
+#[tauri::command]
+pub async fn get_queue(
+    queue: State<'_, ScrapingHandle>,
+) -> Result<Vec<crate::scraper::ScrapingOption>, String> {
+    let items = queue.get_queue().await;
+    Ok(items)
 }
 
 /* old code */

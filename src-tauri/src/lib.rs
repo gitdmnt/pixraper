@@ -33,9 +33,11 @@ pub fn run() {
             commands::config::set_config,
             commands::scraping::add_queue,
             commands::scraping::clear_queue,
+            commands::scraping::remove_queue_item,
             commands::scraping::start_scraping,
             commands::scraping::stop_scraping,
             commands::scraping::get_progress,
+            commands::scraping::get_queue,
             commands::analytics::show_analytics,
         ])
         .run(tauri::generate_context!())

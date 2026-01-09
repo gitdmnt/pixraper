@@ -52,7 +52,7 @@ impl From<IllustData> for ItemRecord {
 
 /// スクレイピングのオプションを表す構造体。
 /// - `tags`、`search_mode`、期間（`scd`/`ecd`）を保持する
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ScrapingOption {
     pub tags: Vec<String>,

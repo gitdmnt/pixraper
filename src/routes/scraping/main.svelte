@@ -5,11 +5,20 @@
   import ActivityPanel from "./components/ActivityPanel.svelte";
   import OptionsPanel from "./components/OptionsPanel.svelte";
   import TipsPanel from "./components/TipsPanel.svelte";
+  import QueueList from "./components/QueueList.svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { Temporal } from "@js-temporal/polyfill";
   import { onMount, onDestroy } from "svelte";
 
-  let scrapingOption = {
+  interface ScrapingOption {
+    tags: string[];
+    searchMode: string;
+    scd: string;
+    ecd: string;
+    detailed: boolean;
+  }
+
+  let scrapingOption: ScrapingOption = {
     tags: [] as string[],
     searchMode: "s_tag",
     scd: Temporal.Now.plainDateISO().toString(),
@@ -21,6 +30,8 @@
   let isRunning = false;
   let scrapedItems = 0;
   let totalItems = 0;
+  let queue: ScrapingOption[] = [];
+
   $: progressPercent = totalItems
     ? Math.round((scrapedItems / totalItems) * 100)
     : 0;
@@ -33,6 +44,14 @@
     total: number | null;
     current: number | null;
   }
+
+  const fetchQueue = async () => {
+    try {
+      queue = await invoke<ScrapingOption[]>("get_queue");
+    } catch (error) {
+      console.error("Failed to fetch queue:", error);
+    }
+  };
 
   const startPolling = () => {
     if (pollInterval) return;
@@ -54,6 +73,9 @@
       scrapedItems = progress.current || 0;
       totalItems = progress.total || 0;
 
+      // Always fetch queue during polling to see changes
+      fetchQueue();
+
       if (!isRunning) {
         stopPolling();
       }
@@ -66,6 +88,7 @@
   onMount(async () => {
     // Initial check
     try {
+      fetchQueue();
       const progress = await invoke<ScrapingProgress>("get_progress");
       isRunning = progress.status === "Running";
       scrapedItems = progress.current || 0;
@@ -103,9 +126,10 @@
 
   const addQueue = () => {
     console.log("Adding to queue:", scrapingOption);
-    invoke("add_queue", { scrapingOption })
+    invoke("add_queue", { option: scrapingOption })
       .then(() => {
         console.log("Scraping option added to queue");
+        fetchQueue();
       })
       .catch((error) => {
         console.error("Error adding scraping option to queue:", error);
@@ -115,11 +139,22 @@
 
   const clearQueue = () => {
     invoke("clear_queue")
-      .then((message) => {
-        console.log(message);
+      .then(() => {
+        console.log("Queue cleared");
+        fetchQueue();
       })
       .catch((error) => {
         console.error("Error clearing scraping queue:", error);
+      });
+  };
+
+  const removeQueueItem = (index: number) => {
+    invoke("remove_queue_item", { index })
+      .then(() => {
+        fetchQueue();
+      })
+      .catch((error) => {
+        console.error("Error removing item from queue:", error);
       });
   };
 
@@ -162,7 +197,7 @@
     <!-- Left / Main -->
     <main class="md:col-span-2 flex flex-col gap-4">
       <ProgressPanel {isRunning} {scrapedItems} {totalItems} />
-      <ActivityPanel activities={[]} />
+      <QueueList {queue} {clearQueue} {removeQueueItem} />
     </main>
 
     <!-- Right / Controls -->
@@ -173,7 +208,7 @@
         {removeTag}
         {clearQueue}
         {addQueue}
-        update={(field: string, value: any) =>
+        update={(field, value) =>
           (scrapingOption = {
             ...scrapingOption,
             [field]: value,
