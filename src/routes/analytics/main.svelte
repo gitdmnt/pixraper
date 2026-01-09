@@ -7,6 +7,7 @@
   import type { CsvRow } from "./type.d.ts";
   import RawCSV from "./rawCSV.svelte";
   import TagRanking from "./tagRanking/main.svelte";
+  import CooccurrenceAnalyze from "./cooccurrenceAnalyze.svelte";
 
   let tab = 0;
   let headers: string[] = [];
@@ -95,6 +96,9 @@
         <button onclick={() => (tab = 0)} class:active={tab === 0}
           >Tag Ranking</button
         >
+        <button onclick={() => (tab = 1)} class:active={tab === 1}
+          >Co-occurrence</button
+        >
         <button onclick={() => (tab = -1)} class:active={tab === -1}
           >Raw CSV</button
         >
@@ -114,7 +118,9 @@
 
     {#if rows.length > 0}
       <div class="md-card p-4 flex-1">
-        {#if tab === 0}
+        {#if tab === 1}
+          <CooccurrenceAnalyze {rows} />
+        {:else if tab === 0}
           <TagRanking {rows} />
         {:else}
           <RawCSV {headers} {rows} />

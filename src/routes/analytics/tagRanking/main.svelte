@@ -1,7 +1,7 @@
 <script lang="ts">
   import TopAppBar from "$lib/components/TopAppBar.svelte";
   import Button from "$lib/components/Button.svelte";
-  import TagList from "./TagList.svelte";
+  import TagList from "$lib/components/TagList.svelte";
   import FiltersPanel from "./FiltersPanel.svelte";
   import OverviewCard from "./OverviewCard.svelte";
 
@@ -145,7 +145,7 @@
     });
   }
 
-  // derive tableItems from filteredTags
+  // derive tableItems from filteredTags for the generic TagList
   $: tableItems = filteredTags.map((tag) => {
     let value = (() => {
       if (weightedType === "workCount") {
@@ -170,11 +170,19 @@
         return tag.count;
       }
     })();
-    return [tag.tag, value];
+
+    return {
+      title: tag.tag,
+      subtitle: `${tag.count.toLocaleString()} works · ${tag.viewCount.toLocaleString()} views · ${tag.bookmarkCount.toLocaleString()} bookmarks`,
+      value: value,
+    };
   });
 
-  // quick lookup map from tag -> stats for rendering subtitles
-  $: tagMap = new Map(filteredTags.map((t) => [t.tag, t]));
+  // quick lookup map from tag -> stats for rendering subtitles (Not needed for new TagList, but keeping if other parts use it, seemingly not?)
+  // Actually checking previous code, tagMap was mostly for TagList.
+  // $: tagMap = new Map(filteredTags.map((t) => [t.tag, t]));
+  // We can remove tagMap if it's unused. Checking file context... it was used in <TagList {tableItems} {tagMap} ... />.
+  // I will comment it out or remove it if I'm sure. I'll remove the prop passing in template.
 
   // pagination helpers
   const setPage = (p: number) => {
@@ -220,7 +228,7 @@
   <div class="flex gap-4 items-start">
     <main class="flex-1 flex flex-col min-h-0 gap-3">
       {#if filteredTags.length > 0}
-        <TagList {tableItems} {tagMap} {itemsPerPage} bind:page />
+        <TagList items={tableItems} {itemsPerPage} bind:page />
       {:else}
         <div class="md-card p-6">
           <p class="text-center">No data available for tag ranking.</p>
