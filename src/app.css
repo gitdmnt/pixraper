@@ -56,6 +56,37 @@
     box-shadow: var(--md-elev-shadow);
 }
 
+.md-list-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px;
+    border-radius: 8px;
+}
+
+.md-list-item:hover {
+    background: rgba(0, 0, 0, 0.04);
+}
+
+.leading {
+    width: 36px;
+    text-align: center;
+}
+
+.subtitle {
+    color: var(--md-on-surface-variant, #6b7280);
+}
+
+.md-chip {
+    display: inline-block;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: var(--md-primary);
+    color: var(--md-on-primary);
+    min-width: 56px;
+    text-align: center;
+}
+
 /* Primary elevated button */
 .btn-md {
     padding: 10px 16px;
