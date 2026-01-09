@@ -11,7 +11,7 @@ use std::env;
 use std::time::{Duration, Instant};
 
 use futures::stream::StreamExt;
-use tauri::{Manager, State};
+use tauri::State;
 
 use crate::{ScrapingHandle, ScrapingState};
 use tokio_util::sync::CancellationToken;
@@ -109,19 +109,9 @@ pub async fn start_rough_scraping(
     }
 
     // 出力ファイルパスの決定。`AppHandle::path()` を使うために `Manager` が導入されている。
-    let now = chrono::Local::now();
-    let default_filename = format!("result_{}.csv", now.format("%Y%m%d_%H%M%S"));
-    let user_input_path = cfg.output.as_deref().unwrap_or(&default_filename);
-    let user_input_path = std::path::Path::new(user_input_path);
-    let output_path = app_handle
-        .path()
-        .document_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from("."))
-        .join("Pixraper")
-        .join(user_input_path);
 
     // CSV 保存は別関数に委譲（責務の分離）
-    crate::scraper::save_as_csv(&res, &output_path)
+    crate::scraper::save_as_csv(&res, &app_handle)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -216,19 +206,7 @@ pub async fn start_detailed_scraping(
 
     // 結果を置き換えて CSV に保存
     res = processed_items;
-
-    let now = chrono::Local::now();
-    let default_filename = format!("result_{}.csv", now.format("%Y%m%d_%H%M%S"));
-    let user_input_path = cfg.output.as_deref().unwrap_or(&default_filename);
-    let user_input_path = std::path::Path::new(user_input_path);
-    let output_path = app_handle
-        .path()
-        .document_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from("."))
-        .join("Pixraper")
-        .join(user_input_path);
-
-    crate::scraper::save_as_csv(&res, &output_path)
+    crate::scraper::save_as_csv(&res, &app_handle)
         .await
         .map_err(|e| e.to_string())?;
 

@@ -5,7 +5,7 @@
 //! - エラーは呼び出し元にわかりやすく伝搬する設計です。
 
 use std::fs;
-use std::path::PathBuf;
+use tauri::Manager;
 
 use crate::scraper::types::ItemRecord;
 
@@ -14,7 +14,19 @@ use crate::scraper::types::ItemRecord;
 /// 実装の意図:
 /// - まず出力先ディレクトリを作成し、その後 CSV ライターでヘッダを書き、各アイテムを追記します。
 /// - 将来的には一時ファイルを書いてからリネームする等、原子性の向上を検討できます。
-pub async fn save_as_csv(items: &[ItemRecord], output_path: &PathBuf) -> Result<(), String> {
+pub async fn save_as_csv(
+    items: &[ItemRecord],
+    app_handle: &tauri::AppHandle,
+) -> Result<(), String> {
+    let now = chrono::Local::now();
+    let filename = format!("result_{}.csv", now.format("%Y%m%d_%H%M%S"));
+    let output_path = app_handle
+        .path()
+        .document_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+        .join("Pixraper")
+        .join(filename);
+
     println!("Saving results to {:?}", output_path);
     if fs::create_dir_all(
         output_path
