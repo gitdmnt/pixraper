@@ -7,6 +7,7 @@
   import TipsPanel from "./components/TipsPanel.svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { Temporal } from "@js-temporal/polyfill";
+  import { onMount, onDestroy } from "svelte";
 
   let scrapingOption = {
     tags: [] as string[],
@@ -23,6 +24,64 @@
   $: progressPercent = totalItems
     ? Math.round((scrapedItems / totalItems) * 100)
     : 0;
+
+  // Polling logic
+  let pollInterval: number | undefined;
+
+  interface ScrapingProgress {
+    status: "Running" | "Stopped";
+    total: number | null;
+    current: number | null;
+  }
+
+  const startPolling = () => {
+    if (pollInterval) return;
+    pollProgress(); // Immediately fetch
+    pollInterval = window.setInterval(pollProgress, 1000);
+  };
+
+  const stopPolling = () => {
+    if (pollInterval) {
+      clearInterval(pollInterval);
+      pollInterval = undefined;
+    }
+  };
+
+  const pollProgress = async () => {
+    try {
+      const progress = await invoke<ScrapingProgress>("get_progress");
+      isRunning = progress.status === "Running";
+      scrapedItems = progress.current || 0;
+      totalItems = progress.total || 0;
+
+      if (!isRunning) {
+        stopPolling();
+      }
+    } catch (error) {
+      console.error("Failed to poll progress:", error);
+      stopPolling();
+    }
+  };
+
+  onMount(async () => {
+    // Initial check
+    try {
+      const progress = await invoke<ScrapingProgress>("get_progress");
+      isRunning = progress.status === "Running";
+      scrapedItems = progress.current || 0;
+      totalItems = progress.total || 0;
+
+      if (isRunning) {
+        startPolling();
+      }
+    } catch (error) {
+      console.error("Failed to check initial progress:", error);
+    }
+  });
+
+  onDestroy(() => {
+    stopPolling();
+  });
 
   const addTag = (tag: string) => {
     if (tag && !scrapingOption.tags.includes(tag)) {
@@ -65,11 +124,11 @@
   };
 
   const startScraping = () => {
-    isRunning = true;
+    // isRunning will be updated by pollProgress
+    startPolling();
     invoke("start_scraping")
       .then(() => {
         console.log("Scraping started");
-        isRunning = true;
       })
       .catch((error) => {
         console.error("Error starting scraping:", error);
@@ -81,8 +140,8 @@
       .then((message) => {
         console.log(message);
       })
-      .finally(() => {
-        isRunning = false;
+      .catch((error) => {
+        console.error("Error stopping scraping:", error);
       });
   };
 </script>

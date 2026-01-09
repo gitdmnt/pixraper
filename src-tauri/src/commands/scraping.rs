@@ -9,7 +9,7 @@
 
 use tauri::State;
 
-use crate::ScrapingHandle;
+use crate::{scraper::ScrapingOption, ScrapingHandle};
 use tokio_util::sync::CancellationToken;
 
 /// キューにスクレイピングオプションを追加します。
@@ -19,7 +19,7 @@ use tokio_util::sync::CancellationToken;
 #[tauri::command]
 pub async fn add_queue(
     queue: State<'_, ScrapingHandle>,
-    option: crate::scraper::ScrapingOption,
+    option: ScrapingOption,
 ) -> Result<(), String> {
     queue.add(option).await;
     Ok(())
