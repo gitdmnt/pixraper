@@ -21,7 +21,7 @@ pub fn run() {
             let app_handle = app.handle();
             let config = config::load_config(app_handle);
             app.manage(Arc::new(Mutex::new(config.clone())));
-            app.manage(scraper::QueryQueueHandle::new(&config));
+            app.manage(scraper::QueryQueueHandle::new(&config, app_handle.clone()));
             app.manage(Arc::new(Mutex::new(None::<CancellationToken>)));
             Ok(())
         })
@@ -37,9 +37,6 @@ pub fn run() {
             commands::scraping::stop_scraping,
             commands::scraping::get_progress,
             commands::analytics::show_analytics,
-            commands::scraping::start_rough_scraping,
-            commands::scraping::start_detailed_scraping,
-            commands::scraping::stop_scraping_old,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

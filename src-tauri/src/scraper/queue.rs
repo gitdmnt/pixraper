@@ -12,7 +12,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::config::Config;
-use crate::scraper::types::{ScrapingOption, ScrapingProgress, ScrapingStatus};
+use crate::scraper::scrape::{ScrapingOption, ScrapingProgress, ScrapingStatus, Worker};
 
 /// キュー操作用のコマンド列挙型。
 ///
@@ -23,14 +23,12 @@ enum Command {
     Add(ScrapingOption),
     /// キューをクリアする。
     Clear,
-    /// キューの次の要素を実行する。
+    /// スクレイピングを開始する。
+    Start(tokio_util::sync::CancellationToken),
+    /// キューの次の要素を実行する（内部ループ用）。
     RunNext,
     /// 実行中のジョブを停止する（トークンをキャンセルする）。
     Stop,
-    /// Actor 側に `CancellationToken` をセットする。
-    SetToken(tokio_util::sync::CancellationToken),
-    /// Actor 側のトークンをクリアする（実行終了後に呼ぶ）。
-    ClearToken,
     /// 進捗取得用の oneshot レスポンダを渡す。
     GetProgress(tokio::sync::oneshot::Sender<(usize, ScrapingProgress)>),
 }
@@ -41,12 +39,20 @@ struct QueryQueueActor {
     progress: ScrapingProgress,
     client: reqwest::Client,
     cfg: Config,
+    app_handle: tauri::AppHandle,
     scraping_token: Option<tokio_util::sync::CancellationToken>,
     receiver: tokio::sync::mpsc::Receiver<Command>,
+    /// 自分自身への送信チャンネル（内部ループ用）
+    sender: tokio::sync::mpsc::Sender<Command>,
 }
 
 impl QueryQueueActor {
-    pub fn new(receiver: tokio::sync::mpsc::Receiver<Command>, cfg: Config) -> Self {
+    pub fn new(
+        receiver: tokio::sync::mpsc::Receiver<Command>,
+        sender: tokio::sync::mpsc::Sender<Command>,
+        cfg: Config,
+        app_handle: tauri::AppHandle,
+    ) -> Self {
         let client = reqwest::Client::builder()
             .user_agent(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:144.0) Gecko/20100101 Firefox/144.0",
@@ -62,8 +68,10 @@ impl QueryQueueActor {
             },
             client,
             cfg,
+            app_handle,
             scraping_token: None,
             receiver,
+            sender,
         }
     }
 
@@ -76,45 +84,59 @@ impl QueryQueueActor {
                 Command::Clear => {
                     self.queue.clear();
                 }
-                Command::RunNext => {
-                    // 重複実行防止
-                    if self.progress.status == ScrapingStatus::Running {
-                        continue;
+                Command::Start(token) => {
+                    // 既に実行中なら無視
+                    if let Some(old) = &self.scraping_token {
+                        if !old.is_cancelled() {
+                            continue;
+                        }
                     }
+                    self.scraping_token = Some(token);
+
+                    self.progress.status = ScrapingStatus::Running;
+                    let _ = self.sender.send(Command::RunNext).await;
+                }
+                Command::RunNext => {
+                    // トークンチェック
+                    let token = match &self.scraping_token {
+                        Some(t) if !t.is_cancelled() => t.clone(),
+                        _ => {
+                            // キャンセル済み、またはトークンなし停止
+                            self.progress.status = ScrapingStatus::Stopped;
+                            self.scraping_token = None;
+                            continue;
+                        }
+                    };
 
                     if let Some(option) = self.queue.pop() {
-                        // トークンがセットされていない場合は実行しない
-                        let token = match &self.scraping_token {
-                            Some(t) => t.clone(),
-                            None => {
-                                println!("No scraping token set, skipping RunNext");
-                                continue;
-                            }
-                        };
-                        option
-                            .fetch(
-                                &self.client,
-                                &Arc::new(Mutex::new(self.progress.clone())),
-                                &self.cfg,
-                                &token,
-                            )
-                            .await
-                            .unwrap_or_else(|e| {
-                                println!("Error during scraping: {}", e);
-                                Vec::new()
-                            });
+                        // Workerに処理を委譲
+                        Worker::run(
+                            &option,
+                            &self.client,
+                            &Arc::new(Mutex::new(self.progress.clone())),
+                            &self.cfg,
+                            &token,
+                            &self.app_handle,
+                        )
+                        .await
+                        .unwrap_or_else(|e| {
+                            println!("Error during scraping: {}", e);
+                        });
+
+                        // 次のループをスケジュール
+                        // チャンネルが一杯でなければ送信
+                        let _ = self.sender.send(Command::RunNext).await;
+                    } else {
+                        // キューが空
+                        self.progress.status = ScrapingStatus::Stopped;
+                        self.scraping_token = None;
                     }
                 }
                 Command::Stop => {
                     if let Some(token) = &self.scraping_token {
                         token.cancel();
                     }
-                }
-                Command::SetToken(token) => {
-                    self.scraping_token = Some(token);
-                }
-                Command::ClearToken => {
-                    self.scraping_token = None;
+                    self.progress.status = ScrapingStatus::Stopped;
                 }
                 Command::GetProgress(responder) => {
                     let _ = responder.send((self.queue.len(), self.progress.clone()));
@@ -134,9 +156,9 @@ pub struct QueryQueueHandle {
 }
 impl QueryQueueHandle {
     /// 新しいハンドルを作成します。内部で Actor を起動して受信ループを開始します。
-    pub fn new(cfg: &Config) -> Self {
+    pub fn new(cfg: &Config, app_handle: tauri::AppHandle) -> Self {
         let (sender, receiver) = tokio::sync::mpsc::channel(100);
-        let mut actor = QueryQueueActor::new(receiver, cfg.clone());
+        let mut actor = QueryQueueActor::new(receiver, sender.clone(), cfg.clone(), app_handle);
         tauri::async_runtime::spawn(async move {
             actor.run().await;
         });
@@ -151,25 +173,16 @@ impl QueryQueueHandle {
         let _ = self.sender.send(Command::Clear).await;
     }
 
-    /// キューの次を実行する合図を送ります。
-    ///
-    /// 実装の意図: Actor 側で `RunNext` を受け取ると内部で単体実行を行います。
-    pub async fn run_next(&self) -> Result<(), String> {
-        let response = self.sender.send(Command::RunNext).await;
-        response.map_err(|e| e.to_string())
+    /// スクレイピングを開始します。
+    pub async fn start(&self, token: tokio_util::sync::CancellationToken) {
+        let _ = self.sender.send(Command::Start(token)).await;
     }
+
     /// 全体の停止を要求します（Actor 側でトークンをキャンセルする）。
     pub async fn stop(&self) {
         let _ = self.sender.send(Command::Stop).await;
     }
-    /// Actor 側にキャンセレーショントークンをセットします。
-    pub async fn set_token(&self, token: tokio_util::sync::CancellationToken) {
-        let _ = self.sender.send(Command::SetToken(token)).await;
-    }
-    /// Actor 側のトークンをクリアします。
-    pub async fn clear_token(&self) {
-        let _ = self.sender.send(Command::ClearToken).await;
-    }
+
     /// 進捗を問い合わせて返します（キュー長と進捗）。
     pub async fn get_progress(&self) -> (usize, ScrapingProgress) {
         let (responder, receiver) = tokio::sync::oneshot::channel();

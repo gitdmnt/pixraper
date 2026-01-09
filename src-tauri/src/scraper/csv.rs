@@ -7,7 +7,7 @@
 use std::fs;
 use tauri::Manager;
 
-use crate::scraper::types::ItemRecord;
+use crate::scraper::scrape::ItemRecord;
 
 /// アイテム一覧を CSV に保存します。
 ///

@@ -7,13 +7,9 @@
 //!   `run_scraping_queue` ではトークンをセット→実行→クリアする流れを明示することで、
 //!   同時実行防止と停止制御を簡潔にしている。
 
-use std::env;
-use std::time::{Duration, Instant};
-
-use futures::stream::StreamExt;
 use tauri::State;
 
-use crate::{ScrapingHandle, ScrapingState};
+use crate::ScrapingHandle;
 use tokio_util::sync::CancellationToken;
 
 /// キューにスクレイピングオプションを追加します。
@@ -38,21 +34,13 @@ pub async fn clear_queue(queue: State<'_, ScrapingHandle>) -> Result<(), String>
 /// キューの先頭要素を順次実行します。
 ///
 /// 実装の意図:
-/// - 実行時に専用の `CancellationToken` をセットしてから `run_next` を繰り返し、
-///   終了時にトークンをクリアします。これによりキュー実行中のキャンセルや重複実行を制御します。
+/// - 実行時に専用の `CancellationToken` を生成して Actor に渡します。
+/// - Actor は内部でループしてキューを消化します（非同期ループ）。
 #[tauri::command]
 pub async fn start_scraping(queue: State<'_, ScrapingHandle>) -> Result<(), String> {
     let token = CancellationToken::new();
-    // QueryQueueActor 側にトークンを渡して、RunNext で利用できるようにする
-    queue.set_token(token.clone()).await;
-    loop {
-        queue.run_next().await?;
-        if queue.is_empty().await {
-            break;
-        }
-    }
-    // 実行終了後はトークンをクリアして、次回実行時に新しいトークンを使えるようにする
-    queue.clear_token().await;
+    // Actor 側にトークンを渡して開始シグナルを送る
+    queue.start(token).await;
     Ok(())
 }
 
@@ -78,6 +66,9 @@ pub async fn get_progress(
     Ok(progress)
 }
 
+/* old code */
+
+/*
 /// ラフスクレイピングを直接実行します（単発実行）。
 ///
 /// 実装の意図:
@@ -237,3 +228,4 @@ pub async fn stop_scraping_old(scraping_state: State<'_, ScrapingState>) -> Resu
         Err("No scraping process is currently running.".to_string())
     }
 }
+ */
