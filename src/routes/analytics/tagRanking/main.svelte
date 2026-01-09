@@ -228,7 +228,7 @@
         </div>
       {/if}
       <div class="flex items-center justify-between mt-2">
-        <div class="text-sm">
+        <div class="text-sm text-muted">
           Showing {page * itemsPerPage + 1} - {Math.min(
             (page + 1) * itemsPerPage,
             tableItems.length

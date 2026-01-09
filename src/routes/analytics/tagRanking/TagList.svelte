@@ -3,54 +3,30 @@
   export let tagMap: Map<string, any> = new Map();
   export let itemsPerPage: number = 10;
   export let page: number = 0; // two-way bind from parent
-  export let itemHeight: number = 56;
 
-  let listContainer: HTMLDivElement | null = null;
-  let scrollRaf: number | null = null;
-  let scrollEndTimeout: any = null;
+  // total pages reactive calculation
+  $: totalPages = Math.max(1, Math.ceil(tableItems.length / itemsPerPage));
 
-  // update page when scrolling
-  function handleScroll() {
-    if (!listContainer) return;
-    if (scrollRaf) cancelAnimationFrame(scrollRaf);
-    scrollRaf = requestAnimationFrame(() => {
-      const st = listContainer!.scrollTop;
-      const firstIndex = Math.floor(st / itemHeight);
-      const newPage = Math.max(
-        0,
-        Math.min(
-          Math.floor((tableItems.length - 1) / itemsPerPage),
-          Math.floor(firstIndex / itemsPerPage)
-        )
-      );
-      if (newPage !== page) page = newPage;
-    });
-
-    if (scrollEndTimeout) clearTimeout(scrollEndTimeout);
-    scrollEndTimeout = setTimeout(() => {
-      if (!listContainer) return;
-      const target = page * itemsPerPage * itemHeight;
-      listContainer.scrollTo({ top: target, behavior: "smooth" });
-    }, 150);
+  function clampPage(p: number) {
+    return Math.max(0, Math.min(p, totalPages - 1));
   }
 
-  // when parent updates page, snap scroll
-  $: if (listContainer) {
-    const target = page * itemsPerPage * itemHeight;
-    // small timeout to avoid interfering with user scroll
-    listContainer.scrollTo({ top: target });
-  }
+  function handleWheel(e: WheelEvent) {
+    if (e.deltaY > 0) {
+      // scroll down -> next page
+      page = clampPage(page + 1);
+    } else if (e.deltaY < 0) {
+      // scroll up -> previous page
+      page = clampPage(page - 1);
+    }
 
-  // expose a method-ish: not required because page is two-way bound
+    e.preventDefault();
+  }
 </script>
 
-<div
-  class="md-card p-2 overflow-auto flex-1"
-  bind:this={listContainer}
-  on:scroll={handleScroll}
->
+<div class="md-card p-2 overflow-auto flex-1" onwheel={handleWheel}>
   {#each tableItems.slice(page * itemsPerPage, (page + 1) * itemsPerPage) as item, idx}
-    <div class="m3-list-item" style="height:{itemHeight}px;">
+    <div class="m3-list-item">
       <div class="leading text-sm text-muted">
         {page * itemsPerPage + idx + 1}
       </div>
