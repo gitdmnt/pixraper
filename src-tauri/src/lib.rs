@@ -31,8 +31,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::config::get_config,
             commands::config::set_config,
-            commands::scraping::add_scraping_queue,
-            commands::scraping::run_scraping_queue,
+            commands::scraping::add_queue,
+            commands::scraping::clear_queue,
+            commands::scraping::start_scraping,
             commands::scraping::stop_scraping,
             commands::scraping::get_progress,
             commands::analytics::show_analytics,

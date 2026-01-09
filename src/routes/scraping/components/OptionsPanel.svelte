@@ -4,8 +4,8 @@
   export let scrapingOption: any;
   export let addTag: ((tag: string) => void) | undefined;
   export let removeTag: ((tag: string) => void) | undefined;
-  export let clearTags: (() => void) | undefined;
-  export let start: (() => void) | undefined;
+  export let clearQueue: (() => void) | undefined;
+  export let addQueue: (() => void) | undefined;
   export let update: ((field: string, value: any) => void) | undefined;
 
   const updateField = (field: string, value: any) => {
@@ -28,12 +28,12 @@
     removeTag?.(tag);
   };
 
-  const handleClearTags = () => {
-    clearTags?.();
+  const handleClearQueue = () => {
+    clearQueue?.();
   };
 
-  const handleStartScrape = () => {
-    start?.();
+  const handleAddQueue = () => {
+    addQueue?.();
   };
 </script>
 
@@ -99,9 +99,7 @@
   </div>
 
   <div class="mt-4 flex gap-2">
-    <Button variant="outlined" on:click={handleClearTags}>Clear</Button>
-    <Button variant="contained" on:click={handleStartScrape}
-      >Start Scrape</Button
-    >
+    <Button variant="contained" on:click={handleAddQueue}>Add Queue</Button>
+    <Button variant="outlined" on:click={handleClearQueue}>Clear</Button>
   </div>
 </div>

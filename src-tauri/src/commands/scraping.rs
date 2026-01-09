@@ -21,11 +21,17 @@ use tokio_util::sync::CancellationToken;
 /// 実装の意図:
 /// - フロントエンドから受け取ったオプションを `QueryQueueHandle` に転送するだけの責務に限定。
 #[tauri::command]
-pub async fn add_scraping_queue(
+pub async fn add_queue(
     queue: State<'_, ScrapingHandle>,
     option: crate::scraper::ScrapingOption,
 ) -> Result<(), String> {
     queue.add(option).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn clear_queue(queue: State<'_, ScrapingHandle>) -> Result<(), String> {
+    queue.clear().await;
     Ok(())
 }
 
@@ -35,7 +41,7 @@ pub async fn add_scraping_queue(
 /// - 実行時に専用の `CancellationToken` をセットしてから `run_next` を繰り返し、
 ///   終了時にトークンをクリアします。これによりキュー実行中のキャンセルや重複実行を制御します。
 #[tauri::command]
-pub async fn run_scraping_queue(queue: State<'_, ScrapingHandle>) -> Result<(), String> {
+pub async fn start_scraping(queue: State<'_, ScrapingHandle>) -> Result<(), String> {
     let token = CancellationToken::new();
     // QueryQueueActor 側にトークンを渡して、RunNext で利用できるようにする
     queue.set_token(token.clone()).await;

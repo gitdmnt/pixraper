@@ -21,6 +21,8 @@ use crate::scraper::types::{ScrapingOption, ScrapingProgress, ScrapingStatus};
 enum Command {
     /// 新しいスクレイピングオプションをキューに追加する。
     Add(ScrapingOption),
+    /// キューをクリアする。
+    Clear,
     /// キューの次の要素を実行する。
     RunNext,
     /// 実行中のジョブを停止する（トークンをキャンセルする）。
@@ -70,6 +72,9 @@ impl QueryQueueActor {
             match command {
                 Command::Add(option) => {
                     self.queue.push(option);
+                }
+                Command::Clear => {
+                    self.queue.clear();
                 }
                 Command::RunNext => {
                     // 重複実行防止
@@ -141,6 +146,11 @@ impl QueryQueueHandle {
     pub async fn add(&self, option: ScrapingOption) {
         let _ = self.sender.send(Command::Add(option)).await;
     }
+    /// キューをクリアします。
+    pub async fn clear(&self) {
+        let _ = self.sender.send(Command::Clear).await;
+    }
+
     /// キューの次を実行する合図を送ります。
     ///
     /// 実装の意図: Actor 側で `RunNext` を受け取ると内部で単体実行を行います。

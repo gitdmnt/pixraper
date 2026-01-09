@@ -24,7 +24,7 @@
     ? Math.round((scrapedItems / totalItems) * 100)
     : 0;
 
-  const handleAddTag = (tag: string) => {
+  const addTag = (tag: string) => {
     if (tag && !scrapingOption.tags.includes(tag)) {
       scrapingOption = {
         ...scrapingOption,
@@ -34,7 +34,7 @@
     console.log("Tags:", scrapingOption.tags);
   };
 
-  const handleRemoveTag = (tag: string) => {
+  const removeTag = (tag: string) => {
     scrapingOption = {
       ...scrapingOption,
       tags: scrapingOption.tags.filter((t) => t !== tag),
@@ -42,36 +42,40 @@
     console.log("Tags:", scrapingOption.tags);
   };
 
-  const handleClearTags = () => {
-    scrapingOption = { ...scrapingOption, tags: [] };
-    console.log("Tags cleared");
-  };
-
-  const addScrapingQueue = () => {
+  const addQueue = () => {
     isRunning = true;
     scrapedItems = 0;
     totalItems = 0; // backend will report actual totals; show indeterminate state until then
 
-    if (detailedMode) {
-      invoke("start_detailed_scraping", { scrapingOption })
-        .then(() => {
-          console.log("Detailed scraping started");
-        })
-        .catch((error) => {
-          console.error("Error starting detailed scraping:", error);
-          isRunning = false;
-        });
-    } else {
-      invoke("start_rough_scraping", { scrapingOption })
-        .then(() => {
-          console.log("Scraping started");
-        })
-        .catch((error) => {
-          console.error("Error starting scraping:", error);
-          isRunning = false;
-        });
-    }
-    console.log("Starting scraping with options:", scrapingOption);
+    invoke("add_queue", { scrapingOption })
+      .then(() => {
+        console.log("Detailed scraping started");
+      })
+      .catch((error) => {
+        console.error("Error starting detailed scraping:", error);
+        isRunning = false;
+      });
+  };
+
+  const clearQueue = () => {
+    invoke("clear_queue")
+      .then((message) => {
+        console.log(message);
+      })
+      .catch((error) => {
+        console.error("Error clearing scraping queue:", error);
+      });
+  };
+
+  const startScraping = () => {
+    invoke("start_scraping")
+      .then(() => {
+        console.log("Scraping started");
+        isRunning = true;
+      })
+      .catch((error) => {
+        console.error("Error starting scraping:", error);
+      });
   };
 
   const stopScraping = () => {
@@ -91,7 +95,7 @@
       <input type="checkbox" bind:checked={detailedMode} />
       <span>Detailed</span>
     </label>
-    <Button variant="outlined" onclick={addScrapingQueue} disabled={isRunning}
+    <Button variant="outlined" onclick={startScraping} disabled={isRunning}
       >Start</Button
     >
     <Button variant="contained" onclick={stopScraping} disabled={!isRunning}
@@ -112,10 +116,10 @@
     <aside class="flex flex-col gap-4">
       <OptionsPanel
         {scrapingOption}
-        addTag={handleAddTag}
-        removeTag={handleRemoveTag}
-        clearTags={handleClearTags}
-        start={addScrapingQueue}
+        {addTag}
+        {removeTag}
+        {clearQueue}
+        {addQueue}
         update={(field: string, value: any) =>
           (scrapingOption = {
             ...scrapingOption,
