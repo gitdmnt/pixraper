@@ -1,6 +1,7 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 
 mod config;
+mod csv;
 mod scraper;
 
 use std::sync::Arc;
@@ -39,6 +40,7 @@ pub fn run() {
             commands::scraping::get_progress,
             commands::scraping::get_queue,
             commands::analytics::show_analytics,
+            commands::analytics::load_dataset,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

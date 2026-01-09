@@ -13,7 +13,7 @@ use std::collections::VecDeque;
 use tokio::sync::Mutex;
 
 use crate::config::Config;
-use crate::scraper::csv::AppHandleLike;
+use crate::csv::AppHandleLike;
 use crate::scraper::scrape::{ScrapingOption, ScrapingProgress, ScrapingStatus, Worker};
 
 /// キュー操作用のコマンド列挙型。

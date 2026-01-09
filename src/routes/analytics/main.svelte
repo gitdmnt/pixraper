@@ -1,6 +1,6 @@
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
-  import { readTextFile } from "@tauri-apps/plugin-fs";
+  import { invoke } from "@tauri-apps/api/core";
 
   import Button from "$lib/components/Button.svelte";
 
@@ -15,6 +15,21 @@
   let rows: CsvRow[] = [];
 
   let errorMessage: string | null = null;
+
+  // Rust側から返ってくるデータ構造
+  interface ItemRecord {
+    id: number;
+    title: string;
+    xRestrict: boolean;
+    tags: string[];
+    userId: number;
+    createDate: string;
+    aiType: boolean;
+    width: number;
+    height: number;
+    bookmarkCount: number | null;
+    viewCount: number | null;
+  }
 
   const selectAndParseCsv = async () => {
     errorMessage = null;
@@ -34,51 +49,40 @@
       });
 
       if (typeof selectedPath === "string") {
-        // Read the selected file as text
-        const content = await readTextFile(selectedPath);
+        // Rust backend reads the CSV
+        const data = await invoke<ItemRecord[]>("load_dataset", {
+          path: selectedPath,
+        });
 
-        // Parse the CSV content
-        const lines = content.trim().split("\n");
-        if (lines.length > 0) {
-          // First line as headers
-          headers = lines[0].split(",").map((h) => h.trim());
-          // Remaining lines as data rows
-          rows = lines
-            .slice(1)
-            .filter((line) => line.trim() !== "")
-            .map((line) => {
-              //ID,Title,X Restrict,Tags,Create Date,AI Type,Width,Height,Bookmark Count,View Count
-              const [
-                id,
-                title,
-                isXRestricted,
-                tags,
-                userId,
-                createDate,
-                generatedByAI,
-                width,
-                height,
-                bookmarkCount,
-                viewCount,
-              ] = line
-                .split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/)
-                .map((cell) => cell.replace(/^"|"$/g, "").trim());
+        // Static headers since we don't parse the CSV line by line in frontend anymore
+        headers = [
+          "ID",
+          "Title",
+          "X Restrict",
+          "Tags",
+          "User ID",
+          "Create Date",
+          "AI Type",
+          "Width",
+          "Height",
+          "Bookmark Count",
+          "View Count",
+        ];
 
-              return {
-                id: Number(id),
-                title,
-                isXRestricted: isXRestricted === "true",
-                tags: (tags ?? "").split(";"),
-                userId: Number(userId),
-                createDate,
-                generatedByAI: generatedByAI === "true",
-                width: Number(width),
-                height: Number(height),
-                bookmarkCount: Number(bookmarkCount),
-                viewCount: Number(viewCount),
-              };
-            });
-        }
+        // Map to frontend CsvRow type
+        rows = data.map((item) => ({
+          id: item.id,
+          title: item.title,
+          isXRestricted: item.xRestrict,
+          tags: item.tags,
+          userId: item.userId,
+          createDate: item.createDate,
+          generatedByAI: item.aiType,
+          width: item.width,
+          height: item.height,
+          bookmarkCount: item.bookmarkCount ?? 0,
+          viewCount: item.viewCount ?? 0,
+        }));
       }
     } catch (err) {
       console.error(err);

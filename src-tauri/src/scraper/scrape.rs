@@ -13,7 +13,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::config::Config;
-use crate::scraper::csv::AppHandleLike;
+use crate::csv::AppHandleLike;
 
 use crate::scraper::api::{fetch_illust_data, fetch_search_result, IllustData};
 
@@ -115,7 +115,7 @@ impl Worker {
 
         // Save to CSV if we have items
         if !items.is_empty() {
-            if let Err(e) = crate::scraper::csv::save_as_csv(&items, app_handle).await {
+            if let Err(e) = crate::csv::save_as_csv(&items, app_handle).await {
                 println!("Failed to save CSV: {}", e);
                 // We might want to return error or just log it.
                 // For now, logging is safer to keep loop running if needed.

@@ -86,3 +86,63 @@ pub async fn save_as_csv(
     }
     Ok(())
 }
+
+/// CSVファイルからアイテム一覧を読み込みます。
+pub fn load_items(path: &str) -> Result<Vec<ItemRecord>, String> {
+    let mut rdr = csv::Reader::from_path(path).map_err(|e| e.to_string())?;
+    let mut items = Vec::new();
+
+    // ヘッダーの手動マッピングなどを避けるため、各行をデシリアライズします。
+    // ここでは一時的な構造体を定義して、CSVのヘッダー名 ("X Restrict" 等) と合わせます。
+    #[derive(serde::Deserialize)]
+    struct CsvRow {
+        #[serde(rename = "ID")]
+        id: u64,
+        #[serde(rename = "Title")]
+        title: String,
+        #[serde(rename = "X Restrict")]
+        x_restrict: String, // bool.to_string() -> "true"/"false"
+        #[serde(rename = "Tags")]
+        tags: String, // "tag1;tag2"
+        #[serde(rename = "User ID")]
+        user_id: u64,
+        #[serde(rename = "Create Date")]
+        create_date: String,
+        #[serde(rename = "AI Type")]
+        ai_type: String, // bool.to_string() -> "true"/"false"
+        #[serde(rename = "Width")]
+        width: u64,
+        #[serde(rename = "Height")]
+        height: u64,
+        #[serde(rename = "Bookmark Count")]
+        bookmark_count: Option<u64>,
+        #[serde(rename = "View Count")]
+        view_count: Option<u64>,
+    }
+
+    for result in rdr.deserialize() {
+        let record: CsvRow = result.map_err(|e| e.to_string())?;
+
+        let tags = if record.tags.is_empty() {
+            Vec::new()
+        } else {
+            record.tags.split(';').map(|s| s.to_string()).collect()
+        };
+
+        items.push(ItemRecord {
+            id: record.id,
+            title: record.title,
+            x_restrict: record.x_restrict.parse().unwrap_or(false),
+            tags,
+            user_id: record.user_id,
+            create_date: record.create_date,
+            ai_type: record.ai_type.parse().unwrap_or(false),
+            width: record.width,
+            height: record.height,
+            bookmark_count: record.bookmark_count,
+            view_count: record.view_count,
+        });
+    }
+
+    Ok(items)
+}

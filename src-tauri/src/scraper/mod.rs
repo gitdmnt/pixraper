@@ -22,7 +22,6 @@
 //! 4. 取得したデータはWorkerによって自動的にCSVファイルに保存されます。
 
 pub mod api;
-pub mod csv;
 pub mod queue;
 pub mod scrape;
 
