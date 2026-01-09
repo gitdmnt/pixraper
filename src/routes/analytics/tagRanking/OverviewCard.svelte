@@ -5,12 +5,11 @@
 </script>
 
 <div class="md-card p-3">
-  <div class="flex items-center justify-between">
-    <div class="font-medium">Overview</div>
-    <div class="text-sm text-muted">
-      CSV rows: {rowsLength} · Filtered tags: {filteredTagsLength}
-    </div>
+  <div class="font-medium">Overview</div>
+  <div class="text-sm text-muted">
+    CSV rows: {rowsLength} · Filtered tags: {filteredTagsLength}
   </div>
+
   <div class="mt-2 text-xs">
     <div class="font-medium">Perf (recent)</div>
     <ul>
