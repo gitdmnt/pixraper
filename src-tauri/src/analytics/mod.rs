@@ -19,7 +19,9 @@ pub enum SortKey {
 #[serde(rename_all = "camelCase")]
 pub struct Filter {
     pub works_count_cutoff: u64,
+    #[serde(rename = "showAIGenerated")]
     pub show_ai_generated: bool,
+    #[serde(rename = "showNotAIGenerated")]
     pub show_not_ai_generated: bool,
     pub show_x_restricted: bool,
     pub show_not_x_restricted: bool,

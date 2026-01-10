@@ -3,8 +3,7 @@
   import TagList from "$lib/components/TagList.svelte";
   import FiltersPanel from "./components/FiltersPanel.svelte";
   import { invoke } from "@tauri-apps/api/core";
-  import { onMount } from "svelte";
-
+  import { onMount, tick } from "svelte";
   // 型定義
   interface TagStats {
     tag: string;
@@ -15,10 +14,20 @@
 
   // 状態変数
   let searchQuery = "";
-  let suggestedTags: string[];
+  let suggestedTags: string[] = [];
   let tagCounts: TagStats[] = [];
   let targetTag: string | null = null;
-  let filter = {
+
+  interface Filter {
+    showAIGenerated: boolean;
+    showNotAIGenerated: boolean;
+    showXRestricted: boolean;
+    showNotXRestricted: boolean;
+    worksCountCutoff: number;
+    searchQuery: string;
+  }
+
+  let filter: Filter = {
     showAIGenerated: true,
     showNotAIGenerated: true,
     showXRestricted: true,
@@ -26,37 +35,47 @@
     worksCountCutoff: 5,
     searchQuery: "",
   };
+
   let cooccurrenceResults: TagStats[] = [];
 
   // タグ一覧を取得
   const fetchAllTags = async () => {
-    await invoke<TagStats[]>("get_all_tags")
-      .then((entries) => {
-        tagCounts = entries;
-      })
-      .catch((e) => {
-        console.error("Failed to fetch all tags:", e);
-        tagCounts = [];
-      });
+    try {
+      const entries = await invoke<TagStats[]>("get_all_tags");
+      tagCounts = entries ?? [];
+    } catch (e) {
+      console.error("Failed to fetch all tags:", e);
+      tagCounts = [];
+    }
   };
 
   onMount(() => {
     fetchAllTags();
   });
 
-  // 検索サジェスト
-  $: suggestedTags = searchQuery
-    ? tagCounts
-        .map((entry) => entry.tag)
-        .filter((t) => t.toLowerCase().includes(searchQuery.toLowerCase()))
-        .slice(0, 10)
-    : tagCounts.map((entry) => entry.tag).slice(0, 10);
+  // 検索サジェスト（件数順で上位10）
+  $: suggestedTags = (() => {
+    const q = searchQuery.trim().toLowerCase();
+    const names = tagCounts.map((entry) => entry.tag);
+    const lookup = Object.fromEntries(tagCounts.map((e) => [e.tag, e.count]));
+    let list = q ? names.filter((t) => t.toLowerCase().includes(q)) : names;
+    list.sort((a, b) => (lookup[b] ?? 0) - (lookup[a] ?? 0));
+    return list.slice(0, 10);
+  })();
 
   let selectedIndex: number = -1;
 
-  $: if (!suggestedTags || suggestedTags.length === 0) selectedIndex = -1;
-  $: if (selectedIndex >= 0 && selectedIndex >= suggestedTags.length)
-    selectedIndex = suggestedTags.length - 1;
+  $: {
+    if (!suggestedTags || suggestedTags.length === 0) selectedIndex = -1;
+    else if (selectedIndex >= suggestedTags.length)
+      selectedIndex = suggestedTags.length - 1;
+  }
+
+  const scrollToSuggestion = async (i: number) => {
+    await tick();
+    const el = document.getElementById(`suggest-${i}`);
+    el?.scrollIntoView({ block: "nearest" });
+  };
 
   const handleKeyDown = (e: KeyboardEvent) => {
     if (!suggestedTags || suggestedTags.length === 0) return;
@@ -66,18 +85,12 @@
       if (selectedIndex < 0) selectedIndex = 0;
       else
         selectedIndex = Math.min(selectedIndex + 1, suggestedTags.length - 1);
-      setTimeout(() => {
-        const el = document.getElementById(`suggest-${selectedIndex}`);
-        el?.scrollIntoView({ block: "nearest" });
-      }, 0);
+      scrollToSuggestion(selectedIndex);
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       if (selectedIndex <= 0) selectedIndex = suggestedTags.length - 1;
       else selectedIndex = Math.max(selectedIndex - 1, 0);
-      setTimeout(() => {
-        const el = document.getElementById(`suggest-${selectedIndex}`);
-        el?.scrollIntoView({ block: "nearest" });
-      }, 0);
+      scrollToSuggestion(selectedIndex);
     } else if (e.key === "Enter") {
       if (selectedIndex >= 0 && selectedIndex < suggestedTags.length) {
         e.preventDefault();
@@ -94,6 +107,7 @@
   // 共起分析結果取得
   let isLoading = false;
   let totalInSubset = 0;
+  let analyzeTimer: ReturnType<typeof setTimeout> | null = null;
 
   const selectTag = (tag: string) => {
     targetTag = tag;
@@ -101,29 +115,33 @@
     analyze(tag);
   };
 
-  const analyze = async (tag: string) => {
+  const analyze = async (tag: string): Promise<void> => {
     if (!tag) return;
     isLoading = true;
-    await invoke<{
-      counts: TagStats[];
-      total: number;
-    }>("calculate_co_occurence", {
-      filter,
-      tag,
-    })
-      .then((res) => {
-        cooccurrenceResults = res.counts;
-        totalInSubset = res.total;
-      })
-      .catch((e) => {
-        console.error("Failed to fetch co-occurrence:", e);
-        cooccurrenceResults = [];
-        totalInSubset = 0;
-      })
-      .finally(() => {
-        isLoading = false;
-      });
+    try {
+      const res = await invoke<{ counts: TagStats[]; total: number }>(
+        "calculate_co_occurence",
+        {
+          filter,
+          tag,
+        }
+      );
+      cooccurrenceResults = res.counts;
+      totalInSubset = res.total;
+    } catch (e) {
+      console.error("Failed to fetch co-occurrence:", e);
+      cooccurrenceResults = [];
+      totalInSubset = 0;
+    } finally {
+      isLoading = false;
+    }
   };
+
+  // filter が変更されたときはデバウンスして再分析
+  $: if (targetTag) {
+    if (analyzeTimer) clearTimeout(analyzeTimer);
+    analyzeTimer = setTimeout(() => analyze(targetTag as string), 200);
+  }
 
   // 共起分析のタグをクリックするとそのタグについて分析し直す
   const handleTagClick = (item: any) => {
@@ -192,7 +210,7 @@
             title: e.tag,
             count: e.count,
             subtitle: `共起率: ${((e.count / totalInSubset) * 100).toFixed(1)}%`,
-            value: (e.count / totalInSubset) * 100,
+            value: ((e.count / totalInSubset) * 100).toFixed(2) + "%",
           }))}
           onclick={handleTagClick}
         />
