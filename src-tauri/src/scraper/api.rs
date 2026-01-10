@@ -215,7 +215,14 @@ pub async fn fetch_search_result(
         if curr_page == 1 {
             last_page = search_body.last_page;
             println!("Total items found: {}", search_body.total);
-            progress.lock().await.total = Some(search_body.total);
+            progress.lock().await.total = Some(
+                last_page
+                    + if scraping_option.detailed {
+                        search_body.total
+                    } else {
+                        0
+                    },
+            );
         }
 
         scraping_results.extend(search_results);

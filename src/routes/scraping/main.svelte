@@ -57,7 +57,7 @@
 
   const startPolling = () => {
     if (pollInterval) return;
-    pollProgress(); // Immediately fetch
+    isRunning = true;
     pollInterval = window.setInterval(pollProgress, 1000);
   };
 
@@ -75,9 +75,11 @@
       scrapedItems = progress.current || 0;
       totalItems = progress.total || 0;
 
+      console.log(
+        `Polled progress: ${scrapedItems}/${totalItems} (${progress.status})`
+      );
       // Always fetch queue during polling to see changes
       fetchQueue();
-
       if (!isRunning) {
         stopPolling();
       }

@@ -139,6 +139,8 @@ impl Worker {
                     break;
                 }
                 // fetch_detail_data performs its own light throttling
+                let current = progress.lock().await.current.unwrap_or(0);
+                progress.lock().await.current = Some(current + 1);
                 let enriched = fetch_detail_data(rec.clone(), client, &cfg.cookies).await?;
                 *rec = enriched;
             }
