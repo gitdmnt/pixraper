@@ -17,7 +17,7 @@ pub enum SortKey {
 /// フィルタ条件をまとめた構造体。
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Filters {
+pub struct Filter {
     pub works_count_cutoff: u64,
     pub show_ai_generated: bool,
     pub show_not_ai_generated: bool,
@@ -56,12 +56,12 @@ pub struct CooccurrenceResult {
 
 /// `Vec<ItemRecord>` に対する拡張トレイト。
 pub trait ItemRecordVecExt {
-    fn filter_by(&self, f: Filters) -> Vec<ItemRecord>;
+    fn filter_by(&self, f: Filter) -> Vec<ItemRecord>;
     fn aggregated_tag_stats(&self) -> Vec<TagStats>;
 }
 
 impl ItemRecordVecExt for Vec<ItemRecord> {
-    fn filter_by(&self, f: Filters) -> Vec<ItemRecord> {
+    fn filter_by(&self, f: Filter) -> Vec<ItemRecord> {
         self.iter()
             .filter(|item| {
                 if !f.show_ai_generated && item.ai_type {

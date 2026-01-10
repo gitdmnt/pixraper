@@ -9,7 +9,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::analytics::{
-    CooccurrenceEntry, CooccurrenceResult, Filters, ItemRecordVecExt, SortKey, TagStats,
+    CooccurrenceEntry, CooccurrenceResult, Filter, ItemRecordVecExt, SortKey, TagStats,
 };
 use crate::csv::load_items;
 use crate::scraper::scrape::ItemRecord;
@@ -67,7 +67,7 @@ pub async fn load_dataset(
 /// キャッシュされたデータセットに対して集計とソートを行います。
 #[tauri::command]
 pub async fn calculate_tag_ranking(
-    filters: Filters,
+    filter: Filter,
     sort_key: SortKey,
     state: tauri::State<'_, AnalyticsState>,
 ) -> Result<Vec<TagStats>, String> {
@@ -76,7 +76,7 @@ pub async fn calculate_tag_ranking(
         .as_ref()
         .ok_or("No dataset loaded. Please import CSV first.")?;
 
-    let filtered_items = items.filter_by(filters);
+    let filtered_items = items.filter_by(filter);
     let mut stats = filtered_items.aggregated_tag_stats();
 
     // 3. Sort
@@ -112,7 +112,7 @@ pub async fn calculate_tag_ranking(
 
 #[tauri::command]
 pub async fn calculate_co_occurence(
-    filters: Filters,
+    filter: Filter,
     tag: String,
     state: tauri::State<'_, AnalyticsState>,
 ) -> Result<CooccurrenceResult, String> {
@@ -120,7 +120,7 @@ pub async fn calculate_co_occurence(
     let items = cache
         .as_ref()
         .ok_or("No dataset loaded. Please import CSV first.")?;
-    let filtered_items = items.filter_by(filters);
+    let filtered_items = items.filter_by(filter);
 
     let mut co_occurrence: HashMap<String, u64> = HashMap::new();
     let mut total_in_subset: u64 = 0;

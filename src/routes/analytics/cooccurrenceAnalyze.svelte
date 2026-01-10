@@ -108,13 +108,7 @@
       counts: TagStats[];
       total: number;
     }>("calculate_co_occurence", {
-      filters: {
-        showAiGenerated: true,
-        showNotAiGenerated: true,
-        showXRestricted: true,
-        showNotXRestricted: true,
-        searchQuery: null,
-      },
+      filter,
       tag,
     })
       .then((res) => {
