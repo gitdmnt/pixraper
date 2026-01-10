@@ -16,6 +16,7 @@
     scd: string;
     ecd: string;
     detailed: boolean;
+    isIllust: boolean;
   }
 
   let scrapingOption: ScrapingOption = {
@@ -24,6 +25,7 @@
     scd: Temporal.Now.plainDateISO().toString(),
     ecd: Temporal.Now.plainDateISO().toString(),
     detailed: false,
+    isIllust: true,
   };
 
   // UI state

@@ -48,6 +48,7 @@ pub async fn save_as_csv(
         let mut wtr = csv::Writer::from_path(output_path).map_err(|e| e.to_string())?;
 
         wtr.write_record([
+            "Is Illust",
             "ID",
             "Title",
             "X Restrict",
@@ -57,6 +58,9 @@ pub async fn save_as_csv(
             "AI Type",
             "Width",
             "Height",
+            "Text Count",
+            "Word Count",
+            "Original",
             "Bookmark Count",
             "View Count",
         ])
@@ -64,6 +68,7 @@ pub async fn save_as_csv(
 
         for item in items {
             wtr.write_record(&[
+                item.is_illust.to_string(),
                 item.id.to_string(),
                 item.title.clone(),
                 item.x_restrict.to_string(),
@@ -71,8 +76,11 @@ pub async fn save_as_csv(
                 item.user_id.to_string(),
                 item.create_date.clone(),
                 item.ai_type.to_string(),
-                item.width.to_string(),
-                item.height.to_string(),
+                item.width.map_or("".to_string(), |v| v.to_string()),
+                item.height.map_or("".to_string(), |v| v.to_string()),
+                item.text_count.map_or("".to_string(), |v| v.to_string()),
+                item.word_count.map_or("".to_string(), |v| v.to_string()),
+                item.is_original.map_or("".to_string(), |v| v.to_string()),
                 item.bookmark_count
                     .map_or("".to_string(), |v| v.to_string()),
                 item.view_count.map_or("".to_string(), |v| v.to_string()),
@@ -96,6 +104,8 @@ pub fn load_items(path: &str) -> Result<Vec<ItemRecord>, String> {
     // ここでは一時的な構造体を定義して、CSVのヘッダー名 ("X Restrict" 等) と合わせます。
     #[derive(serde::Deserialize)]
     struct CsvRow {
+        #[serde(rename = "Is Illust")]
+        is_illust: String, // bool.to_string() -> "true"/"false
         #[serde(rename = "ID")]
         id: u64,
         #[serde(rename = "Title")]
@@ -111,9 +121,15 @@ pub fn load_items(path: &str) -> Result<Vec<ItemRecord>, String> {
         #[serde(rename = "AI Type")]
         ai_type: String, // bool.to_string() -> "true"/"false"
         #[serde(rename = "Width")]
-        width: u64,
+        width: Option<u64>,
         #[serde(rename = "Height")]
-        height: u64,
+        height: Option<u64>,
+        #[serde(rename = "Text Count")]
+        text_count: Option<u64>,
+        #[serde(rename = "Word Count")]
+        word_count: Option<u64>,
+        #[serde(rename = "Original")]
+        is_original: Option<bool>,
         #[serde(rename = "Bookmark Count")]
         bookmark_count: Option<u64>,
         #[serde(rename = "View Count")]
@@ -130,6 +146,7 @@ pub fn load_items(path: &str) -> Result<Vec<ItemRecord>, String> {
         };
 
         items.push(ItemRecord {
+            is_illust: record.is_illust.parse().unwrap_or(true),
             id: record.id,
             title: record.title,
             x_restrict: record.x_restrict.parse().unwrap_or(false),
@@ -139,6 +156,9 @@ pub fn load_items(path: &str) -> Result<Vec<ItemRecord>, String> {
             ai_type: record.ai_type.parse().unwrap_or(false),
             width: record.width,
             height: record.height,
+            text_count: record.text_count,
+            word_count: record.word_count,
+            is_original: record.is_original,
             bookmark_count: record.bookmark_count,
             view_count: record.view_count,
         });

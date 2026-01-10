@@ -381,6 +381,7 @@ mod tests {
             scd: "".into(),
             ecd: "".into(),
             detailed: false,
+            is_illust: true,
         }
     }
 

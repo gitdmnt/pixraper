@@ -96,16 +96,27 @@
           updateField("ecd", (e.target as HTMLInputElement).value)}
       />
     </div>
-    <label class="flex items-center gap-2 text-sm text-muted">
-      <input
-        type="checkbox"
-        bind:checked={scrapingOption.detailed}
-        onchange={(e) =>
-          updateField("detailed", (e.target as HTMLInputElement).checked)}
-      />
-      <span>Detailed</span>
-    </label>
   </div>
+
+  <label class="flex items-center gap-2 text-sm text-muted">
+    <input
+      type="checkbox"
+      bind:checked={scrapingOption.detailed}
+      onchange={(e) =>
+        updateField("detailed", (e.target as HTMLInputElement).checked)}
+    />
+    <span>Detailed</span>
+  </label>
+
+  <label class="flex items-center gap-2 text-sm text-muted">
+    <input
+      type="checkbox"
+      bind:checked={scrapingOption.isIllust}
+      onchange={(e) =>
+        updateField("isIllust", (e.target as HTMLInputElement).checked)}
+    />
+    <span>for Illustrations (else Novels)</span>
+  </label>
 
   <div class="mt-4 flex gap-2">
     <Button variant="contained" onclick={handleAddQueue}>Add Queue</Button>

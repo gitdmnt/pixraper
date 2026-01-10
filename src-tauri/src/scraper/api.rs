@@ -128,7 +128,12 @@ pub async fn fetch_search_result(
 
     let tags = scraping_option.tags.join(" ");
     let base_url = format!(
-        "https://www.pixiv.net/ajax/search/artworks/{}",
+        "https://www.pixiv.net/ajax/search/{}/{}",
+        if scraping_option.is_illust {
+            "artworks"
+        } else {
+            "novel"
+        },
         utf8_percent_encode(&tags, NON_ALPHANUMERIC)
     );
 
@@ -229,13 +234,64 @@ pub async fn fetch_search_result(
     Ok(scraping_results)
 }
 
+// レスポンス共通処理を抽象化するトレイト
+trait DetailResponse {
+    fn is_error(&self) -> bool;
+    fn message(&self) -> &str;
+    fn body_counts(&self) -> Option<(u64, u64)>;
+}
+
+impl DetailResponse for IllustDetailResponse {
+    fn is_error(&self) -> bool {
+        self.error
+    }
+    fn message(&self) -> &str {
+        &self.message
+    }
+    fn body_counts(&self) -> Option<(u64, u64)> {
+        self.body.as_ref().map(|b| (b.bookmark_count, b.view_count))
+    }
+}
+
+impl DetailResponse for NovelDetailResponse {
+    fn is_error(&self) -> bool {
+        self.error
+    }
+    fn message(&self) -> &str {
+        &self.message
+    }
+    fn body_counts(&self) -> Option<(u64, u64)> {
+        self.body.as_ref().map(|b| (b.bookmark_count, b.view_count))
+    }
+}
+
+fn apply_detail<R: DetailResponse>(
+    record: &mut ItemRecord,
+    resp: &R,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    if resp.is_error() {
+        return Err(format!("APIエラーが発生しました: {}", resp.message()).into());
+    }
+    if let Some((b, v)) = resp.body_counts() {
+        record.bookmark_count = Some(b);
+        record.view_count = Some(v);
+        Ok(())
+    } else {
+        Err("レスポンスに 'body' フィールドが含まれていません".into())
+    }
+}
+
 /// イラスト詳細を取得する公開API
-pub async fn fetch_illust_data(
+pub async fn fetch_detail_data(
     mut record: ItemRecord,
     client: &reqwest::Client,
     cookie_header: &Option<String>,
 ) -> Result<ItemRecord, Box<dyn std::error::Error + Send + Sync>> {
-    let url = format!("https://www.pixiv.net/ajax/illust/{}", &record.id);
+    let url = format!(
+        "https://www.pixiv.net/ajax/{}/{}",
+        if record.is_illust { "illust" } else { "novel" },
+        &record.id
+    );
 
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
@@ -249,18 +305,16 @@ pub async fn fetch_illust_data(
         return Err(format!("取得失敗: HTTP {}, url: {}", resp.status(), &url).into());
     }
 
-    // 型は types.rs 内で定義されている `IllustDetailResponse` を使ってパースする
-    let illust_response: IllustDetailResponse = serde_json::from_str(&resp.text().await?)?;
+    // テキストを一度だけ取得してパースする
+    let text = resp.text().await?;
 
-    if illust_response.error {
-        return Err(format!("APIエラーが発生しました: {}", illust_response.message).into());
-    }
-
-    if let Some(body) = illust_response.body {
-        record.bookmark_count = Some(body.bookmark_count);
-        record.view_count = Some(body.view_count);
+    if record.is_illust {
+        let illust_response: IllustDetailResponse = serde_json::from_str(&text)?;
+        apply_detail(&mut record, &illust_response)?;
     } else {
-        return Err("レスポンスに 'body' フィールドが含まれていません".into());
+        let novel_response: NovelDetailResponse = serde_json::from_str(&text)?;
+        apply_detail(&mut record, &novel_response)?;
     }
+
     Ok(record)
 }

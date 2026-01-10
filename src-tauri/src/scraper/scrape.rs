@@ -15,7 +15,7 @@ use tokio::sync::Mutex;
 use crate::config::Config;
 use crate::csv::AppHandleLike;
 
-use crate::scraper::api::{fetch_illust_data, fetch_search_result, IllustData, NovelData};
+use crate::scraper::api::{fetch_detail_data, fetch_search_result, IllustData, NovelData};
 
 /// 内部で使用する簡易的なアイテム表現（CSV出力やUIに渡すため）
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -138,8 +138,8 @@ impl Worker {
                     println!("Detailed scraping cancelled");
                     break;
                 }
-                // fetch_illust_data performs its own light throttling
-                let enriched = fetch_illust_data(rec.clone(), client, &cfg.cookies).await?;
+                // fetch_detail_data performs its own light throttling
+                let enriched = fetch_detail_data(rec.clone(), client, &cfg.cookies).await?;
                 *rec = enriched;
             }
         }
