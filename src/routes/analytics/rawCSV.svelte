@@ -1,8 +1,29 @@
 <script lang="ts">
   import Button from "$lib/components/Button.svelte";
-
-  export let headers: string[] = [];
-  export let rows: any[] = [];
+  import { invoke } from "@tauri-apps/api/core";
+  import type { CsvRow } from "./type.d.ts";
+  import { onMount } from "svelte";
+  let headers: string[] = [];
+  let rows: CsvRow[] = [];
+  let isLoading = false;
+  let error: string | null = null;
+  onMount(async () => {
+    isLoading = true;
+    error = null;
+    try {
+      const result = await invoke<{
+        headers: string[];
+        rows: CsvRow[];
+      }>("get_raw_csv_data");
+      headers = result.headers;
+      rows = result.rows;
+    } catch (e) {
+      console.error(e);
+      error = String(e);
+    } finally {
+      isLoading = false;
+    }
+  });
 
   let page = 0;
   let itemsPerPage = 20;
@@ -42,13 +63,13 @@
       <div class="table-body">
         {#each paginatedRows as item (item.id)}
           <div class="table-row hover:bg-gray-50">
-            <div class="td" title={item.id}>{item.id}</div>
+            <div class="td" title={item.id.toString()}>{item.id}</div>
             <div class="td font-medium" title={item.title}>{item.title}</div>
             <div class="td">{item.isXRestricted ? "Yes" : "No"}</div>
             <div class="td text-xs text-gray-600" title={item.tags.join(", ")}>
               {item.tags.join(", ")}
             </div>
-            <div class="td" title={item.userId}>{item.userId}</div>
+            <div class="td" title={item.userId.toString()}>{item.userId}</div>
             <div class="td" title={item.createDate}>{item.createDate}</div>
             <div class="td">{item.generatedByAI ? "Yes" : "No"}</div>
             <div class="td">{item.width}</div>
