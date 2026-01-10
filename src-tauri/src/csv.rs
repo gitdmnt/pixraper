@@ -105,7 +105,7 @@ pub fn load_items(path: &str) -> Result<Vec<ItemRecord>, String> {
     #[derive(serde::Deserialize)]
     struct CsvRow {
         #[serde(rename = "Is Illust")]
-        is_illust: String, // bool.to_string() -> "true"/"false
+        is_illust: Option<String>, // bool.to_string() -> "true"/"false
         #[serde(rename = "ID")]
         id: u64,
         #[serde(rename = "Title")]
@@ -146,7 +146,7 @@ pub fn load_items(path: &str) -> Result<Vec<ItemRecord>, String> {
         };
 
         items.push(ItemRecord {
-            is_illust: record.is_illust.parse().unwrap_or(true),
+            is_illust: record.is_illust.is_none_or(|v| v.parse().unwrap_or(true)),
             id: record.id,
             title: record.title,
             x_restrict: record.x_restrict.parse().unwrap_or(false),
