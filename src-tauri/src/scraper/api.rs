@@ -132,7 +132,7 @@ pub async fn fetch_search_result(
         if scraping_option.is_illust {
             "artworks"
         } else {
-            "novel"
+            "novels"
         },
         utf8_percent_encode(&tags, NON_ALPHANUMERIC)
     );
