@@ -6,15 +6,17 @@
   import { onMount } from "svelte";
 
   // 型定義
-  interface TagEntry {
+  interface TagStats {
     tag: string;
     count: number;
+    _viewCount: number;
+    _bookmarkCount: number;
   }
 
   // 状態変数
   let searchQuery = "";
   let suggestedTags: string[];
-  let tagCounts: TagEntry[] = [];
+  let tagCounts: TagStats[] = [];
   let targetTag: string | null = null;
   let filter = {
     showAIGenerated: true,
@@ -24,11 +26,11 @@
     worksCountCutoff: 5,
     searchQuery: "",
   };
-  let cooccurrenceResults: TagEntry[] = [];
+  let cooccurrenceResults: TagStats[] = [];
 
   // タグ一覧を取得
   const fetchAllTags = async () => {
-    await invoke<TagEntry[]>("get_all_tags")
+    await invoke<TagStats[]>("get_all_tags")
       .then((entries) => {
         tagCounts = entries;
       })
@@ -103,7 +105,7 @@
     if (!tag) return;
     isLoading = true;
     await invoke<{
-      counts: { tag: string; count: number }[];
+      counts: TagStats[];
       total: number;
     }>("calculate_co_occurence", {
       filters: {

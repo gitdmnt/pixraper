@@ -4,61 +4,23 @@
 //! - 分析は将来的に独立した処理やワーカーに切り出す可能性があるため、
 //!   現状はフロントエンドからの呼び出し用の薄いラッパーを用意しています。
 
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+use crate::analytics::{
+    CooccurrenceEntry, CooccurrenceResult, Filters, ItemRecordVecExt, SortKey, TagStats,
+};
 use crate::csv::load_items;
 use crate::scraper::scrape::ItemRecord;
 
 // State to cache the loaded dataset in memory
 pub struct AnalyticsState(pub Arc<Mutex<Option<Vec<ItemRecord>>>>);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum SortKey {
-    WorkCount,
-    BookmarkCount,
-    ViewCount,
-    BookmarkPerWork,
-    ViewPerWork,
-    BookmarkPerView,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TagRankingFilters {
-    pub works_count_cutoff: u64,
-    pub show_ai_generated: bool,
-    pub show_not_ai_generated: bool,
-    pub show_x_restricted: bool,
-    pub show_not_x_restricted: bool,
-    pub search_query: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TagStats {
-    pub tag: String,
-    pub count: u64,
-    pub view_count: u64,
-    pub bookmark_count: u64,
-    // Derived metrics for display if needed, but primarily used for sorting in Rust
-    // values below are calculated on the fly
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TagEntry {
-    pub tag: String,
-    pub count: u64,
-}
-
 #[tauri::command]
 pub async fn get_all_tags(
     state: tauri::State<'_, AnalyticsState>,
-) -> Result<Vec<TagEntry>, String> {
+) -> Result<Vec<TagStats>, String> {
     let cache = state.0.lock().await;
     let items = match cache.as_ref() {
         Some(v) => v,
@@ -72,9 +34,14 @@ pub async fn get_all_tags(
         }
     }
 
-    let mut entries: Vec<TagEntry> = map
+    let mut entries: Vec<TagStats> = map
         .into_iter()
-        .map(|(tag, count)| TagEntry { tag, count })
+        .map(|(tag, count)| TagStats {
+            tag,
+            count,
+            view_count: 0,
+            bookmark_count: 0,
+        })
         .collect();
 
     entries.sort_by(|a, b| b.count.cmp(&a.count));
@@ -97,71 +64,10 @@ pub async fn load_dataset(
     Ok(items)
 }
 
-trait ItemRecordVecExt {
-    fn filter_by(&self, f: TagRankingFilters) -> Vec<ItemRecord>;
-    fn aggregated_tag_stats(&self) -> Vec<TagStats>;
-}
-
-impl ItemRecordVecExt for Vec<ItemRecord> {
-    fn filter_by(&self, f: TagRankingFilters) -> Vec<ItemRecord> {
-        self.iter()
-            .filter(|item| {
-                if !f.show_ai_generated && item.ai_type {
-                    return false;
-                }
-                if !f.show_not_ai_generated && !item.ai_type {
-                    return false;
-                }
-                if !f.show_x_restricted && item.x_restrict {
-                    return false;
-                }
-                if !f.show_not_x_restricted && !item.x_restrict {
-                    return false;
-                }
-                if let Some(ref query) = f.search_query {
-                    let query_lower = query.to_lowercase();
-                    if !item
-                        .tags
-                        .iter()
-                        .any(|tag| tag.to_lowercase().contains(&query_lower))
-                    {
-                        return false;
-                    }
-                }
-                true
-            })
-            .cloned()
-            .collect()
-    }
-
-    fn aggregated_tag_stats(&self) -> Vec<TagStats> {
-        let mut stats_map: HashMap<String, (u64, u64, u64)> = HashMap::new(); // (count, view, bookmark)
-
-        for item in self {
-            for tag in &item.tags {
-                let entry = stats_map.entry(tag.clone()).or_insert((0, 0, 0));
-                entry.0 += 1;
-                entry.1 += item.view_count.unwrap_or(0);
-                entry.2 += item.bookmark_count.unwrap_or(0);
-            }
-        }
-
-        stats_map
-            .into_iter()
-            .map(|(tag, (count, view_count, bookmark_count))| TagStats {
-                tag,
-                count,
-                view_count,
-                bookmark_count,
-            })
-            .collect()
-    }
-}
-
 /// キャッシュされたデータセットに対して集計とソートを行います。
 #[tauri::command]
 pub async fn calculate_tag_ranking(
-    filters: TagRankingFilters,
+    filters: Filters,
     sort_key: SortKey,
     state: tauri::State<'_, AnalyticsState>,
 ) -> Result<Vec<TagStats>, String> {
@@ -204,23 +110,9 @@ pub async fn calculate_tag_ranking(
     Ok(stats)
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CooccurrenceEntry {
-    pub tag: String,
-    pub count: u64,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CooccurrenceResult {
-    pub counts: Vec<CooccurrenceEntry>,
-    pub total: u64,
-}
-
 #[tauri::command]
 pub async fn calculate_co_occurence(
-    filters: TagRankingFilters,
+    filters: Filters,
     tag: String,
     state: tauri::State<'_, AnalyticsState>,
 ) -> Result<CooccurrenceResult, String> {
@@ -246,14 +138,7 @@ pub async fn calculate_co_occurence(
 
     let mut entries: Vec<CooccurrenceEntry> = co_occurrence
         .into_iter()
-        .map(|(tag, count)| {
-            let rate = if total_in_subset == 0 {
-                0.0
-            } else {
-                (count as f64) / (total_in_subset as f64)
-            };
-            CooccurrenceEntry { tag, count }
-        })
+        .map(|(tag, count)| CooccurrenceEntry { tag, count })
         .collect();
 
     // sort descending by count
