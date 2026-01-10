@@ -3,11 +3,7 @@
   import TopAppBar from "$lib/components/TopAppBar.svelte";
   import Button from "$lib/components/Button.svelte";
   import TagList from "$lib/components/TagList.svelte";
-  import FiltersPanel from "./FiltersPanel.svelte";
-  import OverviewCard from "./OverviewCard.svelte";
-
-  // Parent still passes rows, we use it for stats only (or triggering re-fetch)
-  export let rows: any[] = [];
+  import FiltersPanel from "../components/FiltersPanel.svelte";
 
   // Data from backend
   let filteredTags: {
@@ -26,12 +22,14 @@
     | "viewPerWork"
     | "bookmarkPerView" = "workCount";
 
-  let worksCountCutoff = 5;
-  let showAIGenerated = true;
-  let showNotAIGenerated = true;
-  let showXRestricted = true;
-  let showNotXRestricted = true;
-  let SearchQuery: string = "";
+  let filter = {
+    worksCountCutoff: 5,
+    showAIGenerated: true,
+    showNotAIGenerated: true,
+    showXRestricted: true,
+    showNotXRestricted: true,
+    searchQuery: "",
+  };
 
   let isLoading = false;
   let error: string | null = null;
@@ -42,15 +40,8 @@
     isLoading = true;
     error = null;
     const t0 = performance.now();
-    const filters = {
-      showAiGenerated: showAIGenerated,
-      showNotAiGenerated: showNotAIGenerated,
-      showXRestricted: showXRestricted,
-      showNotXRestricted: showNotXRestricted,
-      searchQuery: SearchQuery.trim() === "" ? null : SearchQuery.trim(),
-    };
 
-    const res = await invoke<
+    await invoke<
       {
         tag: string;
         count: number;
@@ -58,7 +49,7 @@
         bookmarkCount: number;
       }[]
     >("calculate_tag_ranking", {
-      filters,
+      filter,
       sortKey: weightedType,
     })
       .then((r) => (filteredTags = r))
@@ -76,15 +67,7 @@
   // Watchers
   $: {
     // We depend on these variables for fetching
-    const _ = [
-      weightedType,
-      showAIGenerated,
-      showNotAIGenerated,
-      showXRestricted,
-      showNotXRestricted,
-      SearchQuery,
-      rows, // re-fetch if dataset changes
-    ];
+    const _ = filter;
     if (typeof window !== "undefined") {
       // debounce slightly? or just run
       fetchData();
@@ -92,7 +75,9 @@
   }
 
   // Client-side filtering for cutoff (backend doesn't support it yet)
-  $: displayTags = filteredTags.filter((t) => t.count >= worksCountCutoff);
+  $: displayTags = filteredTags.filter(
+    (t) => t.count >= filter.worksCountCutoff
+  );
 
   // Map to Table Items (for TagList)
   $: tableItems = displayTags.map((tag) => {
@@ -150,7 +135,7 @@
       <input
         type="text"
         placeholder="Search tags…"
-        bind:value={SearchQuery}
+        bind:value={filter.searchQuery}
         class="md-search-input"
       />
       <select bind:value={weightedType} class="md-select">
@@ -201,13 +186,7 @@
     </main>
 
     <aside class="flex flex-col gap-4 w-72 shrink-0 overflow-y-auto">
-      <FiltersPanel
-        bind:showAIGenerated
-        bind:showNotAIGenerated
-        bind:showXRestricted
-        bind:showNotXRestricted
-        bind:worksCountCutoff
-      />
+      <FiltersPanel bind:filter />
     </aside>
   </div>
 </div>

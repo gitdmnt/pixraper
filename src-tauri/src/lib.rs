@@ -25,7 +25,9 @@ pub fn run() {
             app.manage(scraper::QueryQueueHandle::new(&config, app_handle.clone()));
             app.manage(Arc::new(Mutex::new(None::<CancellationToken>)));
             // Initialize analytics cache state (None initially)
-            app.manage(commands::analytics::AnalyticsState(Arc::new(Mutex::new(None))));
+            app.manage(commands::analytics::AnalyticsState(Arc::new(Mutex::new(
+                None,
+            ))));
             Ok(())
         })
         .plugin(tauri_plugin_opener::init())
@@ -41,9 +43,10 @@ pub fn run() {
             commands::scraping::stop_scraping,
             commands::scraping::get_progress,
             commands::scraping::get_queue,
-            commands::analytics::show_analytics,
             commands::analytics::load_dataset,
+            commands::analytics::get_all_tags,
             commands::analytics::calculate_tag_ranking,
+            commands::analytics::calculate_co_occurence,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

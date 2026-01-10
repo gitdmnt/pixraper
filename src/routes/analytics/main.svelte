@@ -10,9 +10,7 @@
   import CooccurrenceAnalyze from "./cooccurrenceAnalyze.svelte";
 
   let tab = 0;
-  let headers: string[] = [];
-
-  let rows: CsvRow[] = [];
+  let loaded = false;
 
   let errorMessage: string | null = null;
 
@@ -33,8 +31,7 @@
 
   const selectAndParseCsv = async () => {
     errorMessage = null;
-    headers = [];
-    rows = [];
+    loaded = false;
 
     try {
       // Show the file open dialog to select a CSV file
@@ -54,35 +51,7 @@
           path: selectedPath,
         });
 
-        // Static headers since we don't parse the CSV line by line in frontend anymore
-        headers = [
-          "ID",
-          "Title",
-          "X Restrict",
-          "Tags",
-          "User ID",
-          "Create Date",
-          "AI Type",
-          "Width",
-          "Height",
-          "Bookmark Count",
-          "View Count",
-        ];
-
-        // Map to frontend CsvRow type
-        rows = data.map((item) => ({
-          id: item.id,
-          title: item.title,
-          isXRestricted: item.xRestrict,
-          tags: item.tags,
-          userId: item.userId,
-          createDate: item.createDate,
-          generatedByAI: item.aiType,
-          width: item.width,
-          height: item.height,
-          bookmarkCount: item.bookmarkCount ?? 0,
-          viewCount: item.viewCount ?? 0,
-        }));
+        loaded = true;
       }
     } catch (err) {
       console.error(err);
@@ -120,14 +89,14 @@
       <div class="md-card p-4 text-sm text-red-600">Error: {errorMessage}</div>
     {/if}
 
-    {#if rows.length > 0}
+    {#if loaded}
       <div class="md-card p-4 flex-1">
         {#if tab === 1}
-          <CooccurrenceAnalyze {rows} />
+          <CooccurrenceAnalyze />
         {:else if tab === 0}
-          <TagRanking {rows} />
+          <TagRanking />
         {:else}
-          <RawCSV {headers} {rows} />
+          <RawCSV />
         {/if}
       </div>
     {:else}

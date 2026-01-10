@@ -1,45 +1,57 @@
 <script lang="ts">
   import TopAppBar from "$lib/components/TopAppBar.svelte";
   import TagList from "$lib/components/TagList.svelte";
+  import FiltersPanel from "./components/FiltersPanel.svelte";
+  import { invoke } from "@tauri-apps/api/core";
+  import { onMount } from "svelte";
 
-  export let rows: any[] = [];
+  // 型定義
+  interface TagEntry {
+    tag: string;
+    count: number;
+  }
 
+  // 状態変数
   let searchQuery = "";
-  let targetTag: string | null = null;
-  let cooccurrenceResults: {
-    title: string;
-    subtitle: string;
-    value: string;
-  }[] = [];
-
-  let allTagsMap: Map<string, number>;
-  let sortedAllTags: string[];
   let suggestedTags: string[];
+  let tagCounts: TagEntry[] = [];
+  let targetTag: string | null = null;
+  let filter = {
+    showAIGenerated: true,
+    showNotAIGenerated: true,
+    showXRestricted: true,
+    showNotXRestricted: true,
+    worksCountCutoff: 5,
+    searchQuery: "",
+  };
+  let cooccurrenceResults: TagEntry[] = [];
 
-  // 全タグのユニークリストと出現回数を作成（検索用）
-  // rowsが変更されたら再計算
-  $: allTagsMap = rows.reduce((acc, row) => {
-    row.tags.forEach((tag: string) => {
-      acc.set(tag, (acc.get(tag) || 0) + 1);
-    });
-    return acc;
-  }, new Map<string, number>());
+  // タグ一覧を取得
+  const fetchAllTags = async () => {
+    await invoke<TagEntry[]>("get_all_tags")
+      .then((entries) => {
+        tagCounts = entries;
+      })
+      .catch((e) => {
+        console.error("Failed to fetch all tags:", e);
+        tagCounts = [];
+      });
+  };
 
-  $: sortedAllTags = Array.from(allTagsMap.entries())
-    .sort((a, b) => b[1] - a[1])
-    .map(([tag]) => tag);
+  onMount(() => {
+    fetchAllTags();
+  });
 
-  // 検索候補
+  // 検索サジェスト
   $: suggestedTags = searchQuery
-    ? sortedAllTags
+    ? tagCounts
+        .map((entry) => entry.tag)
         .filter((t) => t.toLowerCase().includes(searchQuery.toLowerCase()))
         .slice(0, 10)
-    : sortedAllTags.slice(0, 10);
+    : tagCounts.map((entry) => entry.tag).slice(0, 10);
 
-  // suggestion keyboard navigation state
   let selectedIndex: number = -1;
 
-  // Keep selectedIndex in range when suggestions change
   $: if (!suggestedTags || suggestedTags.length === 0) selectedIndex = -1;
   $: if (selectedIndex >= 0 && selectedIndex >= suggestedTags.length)
     selectedIndex = suggestedTags.length - 1;
@@ -77,50 +89,47 @@
     }
   };
 
+  // 共起分析結果取得
+  let isLoading = false;
+  let totalInSubset = 0;
+
   const selectTag = (tag: string) => {
     targetTag = tag;
     searchQuery = tag;
     analyze(tag);
   };
 
-  const analyze = (tag: string) => {
+  const analyze = async (tag: string) => {
     if (!tag) return;
-
-    // そのタグを含む投稿を抽出
-    const subset = rows.filter((row) => row.tags.includes(tag));
-    const totalInSubset = subset.length;
-
-    if (totalInSubset === 0) {
-      cooccurrenceResults = [];
-      return;
-    }
-
-    // 共起タグをカウント
-    const coocMap = new Map<string, number>();
-    subset.forEach((row) => {
-      row.tags.forEach((t: string) => {
-        if (t !== tag) {
-          coocMap.set(t, (coocMap.get(t) || 0) + 1);
-        }
-      });
-    });
-
-    // ソートして結果形式に変換
-    cooccurrenceResults = Array.from(coocMap.entries())
-      .map(([t, count]) => {
-        const rate = count / totalInSubset;
-        return {
-          title: t,
-          subtitle: `共起回数: ${count}回 · 共起率: ${(rate * 100).toFixed(1)}%`,
-          value: `${(rate * 100).toFixed(1)}%`,
-          // internal sort key
-          rawCount: count,
-        };
+    isLoading = true;
+    await invoke<{
+      counts: { tag: string; count: number }[];
+      total: number;
+    }>("calculate_co_occurence", {
+      filters: {
+        showAiGenerated: true,
+        showNotAiGenerated: true,
+        showXRestricted: true,
+        showNotXRestricted: true,
+        searchQuery: null,
+      },
+      tag,
+    })
+      .then((res) => {
+        cooccurrenceResults = res.counts;
+        totalInSubset = res.total;
       })
-      .sort((a, b) => b.rawCount - a.rawCount)
-      .map(({ title, subtitle, value }) => ({ title, subtitle, value }));
+      .catch((e) => {
+        console.error("Failed to fetch co-occurrence:", e);
+        cooccurrenceResults = [];
+        totalInSubset = 0;
+      })
+      .finally(() => {
+        isLoading = false;
+      });
   };
 
+  // 共起分析のタグをクリックするとそのタグについて分析し直す
   const handleTagClick = (item: any) => {
     selectTag(item.title);
   };
@@ -135,10 +144,7 @@
             >{targetTag || "なし"}</span
           >
           (母数:
-          <span class="font-mono"
-            >{rows.filter((r) => r.tags.includes(targetTag || "")).length ||
-              0}</span
-          >件)
+          <span class="font-mono">{targetTag ? totalInSubset : 0}</span>件)
         </div>
         <div class="w-64">
           <input
@@ -167,7 +173,8 @@
                 >
                   {tag}
                   <span class="text-neutral-400 text-xs"
-                    >({allTagsMap.get(tag)})</span
+                    >({tagCounts.find((entry) => entry.tag === tag)?.count ||
+                      0})</span
                   >
                 </button>
               {/each}
@@ -175,29 +182,40 @@
           {/if}
         </div>
       </div>
-      <p class="text-sm text-neutral-600">
-        特定のタグと一緒に付けられることが多いタグを分析します。
-      </p>
     </div>
   </TopAppBar>
 
-  <!-- 結果表示エリア -->
-  <div
-    class="flex-1 flex flex-col min-h-0 bg-white rounded-xl border border-neutral-200 overflow-hidden"
-  >
-    {#if targetTag && cooccurrenceResults.length > 0}
-      <TagList items={cooccurrenceResults} onclick={handleTagClick} />
-    {:else if targetTag}
-      <div class="p-8 text-center text-neutral-500">
-        <p>共起するタグが見つかりませんでした。</p>
-      </div>
-    {:else}
-      <div
-        class="p-8 text-center text-neutral-400 flex flex-col items-center justify-center h-full"
-      >
-        <div class="text-4xl mb-2">🔍</div>
-        <p>左上のボックスから分析したいタグを検索して選択してください。</p>
-      </div>
-    {/if}
+  <div class="h-full w-full flex flex-row gap-2">
+    <!-- 結果表示エリア -->
+    <main
+      class="flex-1 flex flex-col min-h-0 bg-white rounded-xl border border-neutral-200 overflow-hidden"
+    >
+      {#if targetTag && cooccurrenceResults.length > 0}
+        <TagList
+          items={cooccurrenceResults.map((e) => ({
+            title: e.tag,
+            count: e.count,
+            subtitle: `共起率: ${((e.count / totalInSubset) * 100).toFixed(1)}%`,
+            value: (e.count / totalInSubset) * 100,
+          }))}
+          onclick={handleTagClick}
+        />
+      {:else if targetTag}
+        <div class="p-8 text-center text-neutral-500">
+          <p>共起するタグが見つかりませんでした。</p>
+        </div>
+      {:else}
+        <div
+          class="p-8 text-center text-neutral-400 flex flex-col items-center justify-center h-full"
+        >
+          <div class="text-4xl mb-2">🔍</div>
+          <p>左上のボックスから分析したいタグを検索して選択してください。</p>
+        </div>
+      {/if}
+    </main>
+
+    <aside class="flex flex-col gap-4 w-72 shrink-0 overflow-y-auto">
+      <FiltersPanel bind:filter />
+    </aside>
   </div>
 </div>
