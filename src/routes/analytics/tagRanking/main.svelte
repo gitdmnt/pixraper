@@ -11,6 +11,7 @@
     count: number;
     viewCount: number;
     bookmarkCount: number;
+    normalizedScore?: number;
   }[] = [];
 
   // Sort & Filters
@@ -20,7 +21,8 @@
     | "viewCount"
     | "bookmarkPerWork"
     | "viewPerWork"
-    | "bookmarkPerView" = "workCount";
+    | "bookmarkPerView"
+    | "normalizedScore" = "workCount";
 
   let filter = {
     worksCountCutoff: 5,
@@ -67,7 +69,7 @@
   // Watchers
   $: {
     // We depend on these variables for fetching
-    const _ = filter;
+    const _ = [filter, weightedType];
     if (typeof window !== "undefined") {
       // debounce slightly? or just run
       fetchData();
@@ -94,6 +96,11 @@
       value = `${(tag.bookmarkCount / Math.max(1, tag.count)).toFixed(2)} (${tag.bookmarkCount}/${tag.count} works)`;
     } else if (weightedType === "viewPerWork") {
       value = `${(tag.viewCount / Math.max(1, tag.count)).toFixed(2)} (${tag.viewCount}/${tag.count} works)`;
+    } else if (weightedType === "normalizedScore") {
+      value =
+        typeof tag.normalizedScore === "number"
+          ? tag.normalizedScore.toFixed(2)
+          : "-";
     } else {
       value = tag.count;
     }
@@ -145,6 +152,7 @@
         <option value="bookmarkPerWork">Bookmark per Works</option>
         <option value="viewPerWork">View per Works</option>
         <option value="bookmarkPerView">Bookmark percentage per View</option>
+        <option value="normalizedScore">Artist-normalized score</option>
       </select>
     </div>
   </TopAppBar>

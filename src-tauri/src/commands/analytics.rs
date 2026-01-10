@@ -10,6 +10,7 @@ use tokio::sync::Mutex;
 
 use crate::analytics::{
     CooccurrenceEntry, CooccurrenceResult, Filter, ItemRecordVecExt, SortKey, TagStats,
+    TagStatsVecExt,
 };
 use crate::csv::load_items;
 use crate::scraper::scrape::ItemRecord;
@@ -41,6 +42,7 @@ pub async fn get_all_tags(
             count,
             view_count: 0,
             bookmark_count: 0,
+            normalized_score: 0.0,
         })
         .collect();
 
@@ -76,36 +78,23 @@ pub async fn calculate_tag_ranking(
         .as_ref()
         .ok_or("No dataset loaded. Please import CSV first.")?;
 
-    let filtered_items = items.filter_by(filter);
-    let mut stats = filtered_items.aggregated_tag_stats();
+    // 1) Filter
+    let filtered_items = items.filter_by(&filter);
 
-    // 3. Sort
-    stats.sort_by(|a, b| match sort_key {
-        SortKey::WorkCount => b.count.cmp(&a.count),
-        SortKey::BookmarkCount => b.bookmark_count.cmp(&a.bookmark_count),
-        SortKey::ViewCount => b.view_count.cmp(&a.view_count),
-        SortKey::BookmarkPerWork => {
-            let a_rate = a.bookmark_count as f64 / a.count.max(1) as f64;
-            let b_rate = b.bookmark_count as f64 / b.count.max(1) as f64;
-            b_rate
-                .partial_cmp(&a_rate)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        }
-        SortKey::ViewPerWork => {
-            let a_rate = a.view_count as f64 / a.count.max(1) as f64;
-            let b_rate = b.view_count as f64 / b.count.max(1) as f64;
-            b_rate
-                .partial_cmp(&a_rate)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        }
-        SortKey::BookmarkPerView => {
-            let a_rate = a.bookmark_count as f64 / a.view_count.max(1) as f64;
-            let b_rate = b.bookmark_count as f64 / b.view_count.max(1) as f64;
-            b_rate
-                .partial_cmp(&a_rate)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        }
-    });
+    // 2) PASS 1: Compute per-artist statistics (log(bookmark+1)), and global stats for fallback
+    let (global_mean, global_std) = filtered_items.global_stats();
+    let artist_stats = filtered_items.artist_stats();
+    // 3) PASS 2: Aggregate tags and accumulate normalized Z-scores
+    let mut stats: Vec<TagStats> =
+        filtered_items.tag_stats(&artist_stats, (global_mean, global_std));
+
+    // 4) Sort
+    stats.sort_by_key(sort_key);
+
+    // 5) Search Query Filter
+    if let Some(query) = &filter.search_query {
+        stats.search_query_filter(query);
+    }
 
     Ok(stats)
 }
@@ -120,7 +109,7 @@ pub async fn calculate_co_occurence(
     let items = cache
         .as_ref()
         .ok_or("No dataset loaded. Please import CSV first.")?;
-    let filtered_items = items.filter_by(filter);
+    let filtered_items = items.filter_by(&filter);
 
     let mut co_occurrence: HashMap<String, u64> = HashMap::new();
     let mut total_in_subset: u64 = 0;
