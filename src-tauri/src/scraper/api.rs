@@ -30,22 +30,23 @@ pub(crate) struct PixivSearchResponse {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ResponseBody {
-    pub(crate) illust_manga: IllustManga,
+    pub(crate) illust_manga: Option<IllustMangaNovel>,
+    pub(crate) novel: Option<IllustMangaNovel>,
 }
-
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct IllustManga {
-    pub(crate) data: Vec<ItemRecordOrAd>,
+pub(crate) struct IllustMangaNovel {
+    pub(crate) data: Vec<IllustNovelRecordOrAd>,
     pub(crate) total: u64,
     pub(crate) last_page: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged, rename_all = "camelCase")]
-pub enum ItemRecordOrAd {
+pub enum IllustNovelRecordOrAd {
     Ad(AdContainer),
-    Item(IllustData),
+    Illust(IllustData),
+    Novel(NovelData),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -68,6 +69,21 @@ pub(crate) struct IllustData {
     pub(crate) height: u64,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct NovelData {
+    pub(crate) id: String,
+    pub(crate) title: String,
+    pub(crate) x_restrict: i64,
+    pub(crate) tags: Vec<String>,
+    pub(crate) user_id: String,
+    pub(crate) text_count: u64,
+    pub(crate) word_count: u64,
+    pub(crate) is_original: bool,
+    pub(crate) create_date: String,
+    pub(crate) ai_type: i64,
+}
+
 // ----- 詳細 API のレスポンス型 -----
 
 #[derive(Debug, Deserialize)]
@@ -80,6 +96,20 @@ pub(crate) struct IllustDetailResponse {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct IllustDetailBody {
+    pub(crate) bookmark_count: u64,
+    pub(crate) view_count: u64,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct NovelDetailResponse {
+    pub(crate) error: bool,
+    pub(crate) message: String,
+    pub(crate) body: Option<NovelDetailBody>,
+}
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct NovelDetailBody {
     pub(crate) bookmark_count: u64,
     pub(crate) view_count: u64,
 }
@@ -155,14 +185,25 @@ pub async fn fetch_search_result(
             .into());
         }
 
-        let search_body = search_response.body.illust_manga;
+        let search_body = if scraping_option.is_illust {
+            search_response
+                .body
+                .illust_manga
+                .ok_or("レスポンスに 'illustManga' フィールドが含まれていません")?
+        } else {
+            search_response
+                .body
+                .novel
+                .ok_or("レスポンスに 'novel' フィールドが含まれていません")?
+        };
 
         let search_results: Vec<ItemRecord> = search_body
             .data
             .into_iter()
             .filter_map(|d| match d {
-                ItemRecordOrAd::Item(item) => Some(item.into()),
-                ItemRecordOrAd::Ad(_) => None,
+                IllustNovelRecordOrAd::Illust(item) => Some(item.into()),
+                IllustNovelRecordOrAd::Novel(item) => Some(item.into()),
+                IllustNovelRecordOrAd::Ad(_) => None,
             })
             .collect();
 

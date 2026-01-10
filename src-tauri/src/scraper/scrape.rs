@@ -15,12 +15,13 @@ use tokio::sync::Mutex;
 use crate::config::Config;
 use crate::csv::AppHandleLike;
 
-use crate::scraper::api::{fetch_illust_data, fetch_search_result, IllustData};
+use crate::scraper::api::{fetch_illust_data, fetch_search_result, IllustData, NovelData};
 
 /// 内部で使用する簡易的なアイテム表現（CSV出力やUIに渡すため）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ItemRecord {
+    pub is_illust: bool,
     pub id: u64,
     pub title: String,
     pub x_restrict: bool,
@@ -28,14 +29,18 @@ pub struct ItemRecord {
     pub user_id: u64,
     pub create_date: String,
     pub ai_type: bool,
-    pub width: u64,
-    pub height: u64,
+    pub width: Option<u64>,
+    pub height: Option<u64>,
+    pub text_count: Option<u64>,
+    pub word_count: Option<u64>,
+    pub is_original: Option<bool>,
     pub bookmark_count: Option<u64>,
     pub view_count: Option<u64>,
 }
 impl From<IllustData> for ItemRecord {
     fn from(data: IllustData) -> Self {
         ItemRecord {
+            is_illust: true,
             id: data.id.parse().unwrap_or(0),
             title: data.title,
             x_restrict: data.x_restrict != 0,
@@ -43,8 +48,33 @@ impl From<IllustData> for ItemRecord {
             user_id: data.user_id.parse().unwrap_or(0),
             create_date: data.create_date,
             ai_type: data.ai_type != 1,
-            width: data.width,
-            height: data.height,
+            width: Some(data.width),
+            height: Some(data.height),
+            text_count: None,
+            word_count: None,
+            is_original: None,
+            bookmark_count: None,
+            view_count: None,
+        }
+    }
+}
+
+impl From<NovelData> for ItemRecord {
+    fn from(data: NovelData) -> Self {
+        ItemRecord {
+            is_illust: false,
+            id: data.id.parse().unwrap_or(0),
+            title: data.title,
+            x_restrict: data.x_restrict != 0,
+            tags: data.tags,
+            user_id: data.user_id.parse().unwrap_or(0),
+            create_date: data.create_date,
+            ai_type: data.ai_type != 1,
+            width: None,
+            height: None,
+            text_count: Some(data.text_count),
+            word_count: Some(data.word_count),
+            is_original: Some(data.is_original),
             bookmark_count: None,
             view_count: None,
         }
@@ -61,6 +91,7 @@ pub struct ScrapingOption {
     pub scd: String,
     pub ecd: String,
     pub detailed: bool,
+    pub is_illust: bool,
 }
 
 // ----- 進捗関連の型 -----
