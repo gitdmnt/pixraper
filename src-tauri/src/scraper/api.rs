@@ -293,6 +293,7 @@ pub async fn fetch_detail_data(
     mut record: ItemRecord,
     client: &reqwest::Client,
     cookie_header: &Option<String>,
+    interval_millis: u64,
 ) -> Result<ItemRecord, Box<dyn std::error::Error + Send + Sync>> {
     let url = format!(
         "https://www.pixiv.net/ajax/{}/{}",
@@ -300,7 +301,7 @@ pub async fn fetch_detail_data(
         &record.id
     );
 
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    tokio::time::sleep(Duration::from_millis(interval_millis)).await;
 
     let resp = client
         .get(&url)
@@ -324,4 +325,37 @@ pub async fn fetch_detail_data(
     }
 
     Ok(record)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_record() -> crate::scraper::scrape::ItemRecord {
+        crate::scraper::scrape::ItemRecord {
+            is_illust: true,
+            id: 0,
+            title: String::new(),
+            x_restrict: false,
+            tags: vec![],
+            user_id: 0,
+            create_date: String::new(),
+            ai_type: false,
+            width: None,
+            height: None,
+            text_count: None,
+            word_count: None,
+            is_original: None,
+            bookmark_count: None,
+            view_count: None,
+        }
+    }
+
+    // fetch_detail_data が interval_millis: u64 を受け取るシグネチャであることのコンパイル確認
+    #[allow(dead_code)]
+    fn _assert_fetch_detail_data_accepts_interval_millis() {
+        let client = reqwest::Client::new();
+        let record = make_record();
+        let _ = fetch_detail_data(record, &client, &None, 1000u64);
+    }
 }
