@@ -210,6 +210,14 @@ impl ItemRecordVecExt for Vec<ItemRecord> {
     }
 }
 
+/// タグごとの件数のみを表す軽量型。`get_all_tags` コマンド専用。
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TagCount {
+    pub tag: String,
+    pub count: u64,
+}
+
 pub trait TagStatsVecExt {
     fn sort_by_key(&mut self, key: SortKey);
     fn search_query_filter(&mut self, query: &str) -> &mut Self;
@@ -248,5 +256,81 @@ impl TagStatsVecExt for Vec<TagStats> {
         let query_lower = query.to_lowercase();
         self.retain(|tag_stat| tag_stat.tag.to_lowercase().contains(&query_lower));
         self
+    }
+}
+
+/// `get_all_tags` ロジックの純粋関数（テスト容易性のため抽出）。
+/// キャッシュ済みアイテム全件からタグ件数を集計し、count 降順でソートして返す。
+pub fn count_tags(items: &[crate::scraper::scrape::ItemRecord]) -> Vec<TagCount> {
+    let mut map: HashMap<String, u64> = HashMap::new();
+    for item in items {
+        for tag in &item.tags {
+            *map.entry(tag.clone()).or_insert(0) += 1;
+        }
+    }
+    let mut entries: Vec<TagCount> = map
+        .into_iter()
+        .map(|(tag, count)| TagCount { tag, count })
+        .collect();
+    entries.sort_by(|a, b| b.count.cmp(&a.count));
+    entries
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::scraper::scrape::ItemRecord;
+
+    fn make_item(tags: Vec<&str>) -> ItemRecord {
+        ItemRecord {
+            is_illust: true,
+            id: 0,
+            title: String::new(),
+            x_restrict: false,
+            tags: tags.into_iter().map(String::from).collect(),
+            user_id: 0,
+            create_date: String::new(),
+            ai_type: false,
+            width: None,
+            height: None,
+            text_count: None,
+            word_count: None,
+            is_original: None,
+            bookmark_count: None,
+            view_count: None,
+        }
+    }
+
+    #[test]
+    fn count_tags_returns_tag_count_fields_only() {
+        let items = vec![
+            make_item(vec!["a", "b"]),
+            make_item(vec!["a"]),
+        ];
+        let result = count_tags(&items);
+        // TagCount には tag と count のみ存在する（コンパイルで保証）
+        assert!(result.iter().any(|tc| tc.tag == "a" && tc.count == 2));
+        assert!(result.iter().any(|tc| tc.tag == "b" && tc.count == 1));
+    }
+
+    #[test]
+    fn count_tags_empty_items_returns_empty() {
+        let result = count_tags(&[]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn count_tags_sorted_descending_by_count() {
+        // common=2, rare=1 なので common が先頭
+        let items = vec![
+            make_item(vec!["common"]),
+            make_item(vec!["common"]),
+            make_item(vec!["rare"]),
+        ];
+        let result = count_tags(&items);
+        assert_eq!(result[0].tag, "common");
+        assert_eq!(result[0].count, 2);
+        assert_eq!(result[1].tag, "rare");
+        assert_eq!(result[1].count, 1);
     }
 }
