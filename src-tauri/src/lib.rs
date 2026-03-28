@@ -8,10 +8,8 @@ mod scraper;
 use std::sync::Arc;
 use tauri::Manager;
 use tokio::sync::Mutex;
-use tokio_util::sync::CancellationToken;
 
 pub type AppConfig = Arc<Mutex<config::Config>>;
-pub type ScrapingState = Arc<Mutex<Option<CancellationToken>>>;
 pub type ScrapingHandle = scraper::QueryQueueHandle;
 
 mod commands;
@@ -24,7 +22,6 @@ pub fn run() {
             let config = config::load_config(app_handle);
             app.manage(Arc::new(Mutex::new(config.clone())));
             app.manage(scraper::QueryQueueHandle::new(&config, app_handle.clone()));
-            app.manage(Arc::new(Mutex::new(None::<CancellationToken>)));
             // Initialize analytics cache state (None initially)
             app.manage(commands::analytics::AnalyticsState(Arc::new(Mutex::new(
                 None,
