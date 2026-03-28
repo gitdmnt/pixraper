@@ -14,7 +14,8 @@ pub struct CookieProfile {
 pub struct Config {
     pub cookies: Option<String>,
     pub output: Option<String>,
-    pub scraping_interval_millis: u64,
+    pub scraping_interval_min_millis: u64,
+    pub scraping_interval_max_millis: u64,
     #[serde(default)]
     pub cookie_profiles: Vec<CookieProfile>,
     pub active_profile_id: Option<String>,
@@ -25,7 +26,8 @@ impl Default for Config {
         Config {
             cookies: None,
             output: None,
-            scraping_interval_millis: 1000,
+            scraping_interval_min_millis: 1000,
+            scraping_interval_max_millis: 2000,
             cookie_profiles: vec![],
             active_profile_id: None,
         }

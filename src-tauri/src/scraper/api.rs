@@ -7,12 +7,19 @@
 //! - 将来的な拡張点: レート制御、リトライ、詳細なメトリクスの収集などをこの層で扱います。
 
 use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
 
 use reqwest::header::COOKIE;
 use tokio::sync::Mutex;
+
+fn random_interval(min: u64, max: u64) -> Duration {
+    let effective_max = max.max(min);
+    let millis = rand::thread_rng().gen_range(min..=effective_max);
+    Duration::from_millis(millis)
+}
 
 use crate::config::Config;
 use crate::scraper::scrape::{ItemRecord, ScrapingOption, ScrapingProgress, ScrapingStatus};
@@ -155,7 +162,7 @@ pub async fn fetch_search_result(
             break;
         }
 
-        tokio::time::sleep(Duration::from_millis(cfg.scraping_interval_millis)).await;
+        tokio::time::sleep(random_interval(cfg.scraping_interval_min_millis, cfg.scraping_interval_max_millis)).await;
 
         let resp = client
             .get(&base_url)
@@ -293,7 +300,8 @@ pub async fn fetch_detail_data(
     mut record: ItemRecord,
     client: &reqwest::Client,
     cookie_header: &Option<String>,
-    interval_millis: u64,
+    interval_min_millis: u64,
+    interval_max_millis: u64,
 ) -> Result<ItemRecord, Box<dyn std::error::Error + Send + Sync>> {
     let url = format!(
         "https://www.pixiv.net/ajax/{}/{}",
@@ -301,7 +309,7 @@ pub async fn fetch_detail_data(
         &record.id
     );
 
-    tokio::time::sleep(Duration::from_millis(interval_millis)).await;
+    tokio::time::sleep(random_interval(interval_min_millis, interval_max_millis)).await;
 
     let resp = client
         .get(&url)
@@ -351,11 +359,38 @@ mod tests {
         }
     }
 
-    // fetch_detail_data が interval_millis: u64 を受け取るシグネチャであることのコンパイル確認
     #[allow(dead_code)]
-    fn _assert_fetch_detail_data_accepts_interval_millis() {
+    fn _assert_fetch_detail_data_compiles() {
         let client = reqwest::Client::new();
         let record = make_record();
-        let _ = fetch_detail_data(record, &client, &None, 1000u64);
+        let _ = fetch_detail_data(record, &client, &None, 1000u64, 2000u64);
+    }
+
+    #[test]
+    fn test_random_interval_within_range() {
+        for _ in 0..100 {
+            let d = random_interval(1000, 2000);
+            assert!(d >= Duration::from_millis(1000));
+            assert!(d <= Duration::from_millis(2000));
+        }
+    }
+
+    #[test]
+    fn test_random_interval_min_equals_max() {
+        let d = random_interval(1000, 1000);
+        assert_eq!(d, Duration::from_millis(1000));
+    }
+
+    #[test]
+    fn test_random_interval_min_greater_than_max() {
+        let d = random_interval(2000, 1000);
+        assert_eq!(d, Duration::from_millis(2000));
+    }
+
+    #[test]
+    fn test_random_interval_zero() {
+        // 0ms は許容する（無間隔スクレイピング）
+        let d = random_interval(0, 0);
+        assert_eq!(d, Duration::from_millis(0));
     }
 }

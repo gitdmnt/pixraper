@@ -8,7 +8,8 @@
   let config: Config = $state({
     cookies: null,
     output: null,
-    scraping_interval_millis: 1000,
+    scraping_interval_min_millis: 1000,
+    scraping_interval_max_millis: 2000,
     cookie_profiles: [],
     active_profile_id: null,
   });
@@ -93,16 +94,36 @@
     </div>
 
     <div class="flex flex-col gap-1">
-      <label class="text-sm font-medium" for="interval">Scraping Interval (ms)</label>
-      <input
-        id="interval"
-        type="number"
-        class="md-select w-32"
-        bind:value={config.scraping_interval_millis}
-        min="0"
-        step="100"
-      />
-      <div class="text-xs text-muted">Minimum delay between requests</div>
+      <label class="text-sm font-medium">Scraping Interval (ms)</label>
+      <div class="flex items-center gap-2">
+        <div class="flex flex-col gap-1">
+          <label class="text-xs text-muted" for="interval-min">Min</label>
+          <input
+            id="interval-min"
+            type="number"
+            class="md-select w-32"
+            bind:value={config.scraping_interval_min_millis}
+            min="0"
+            step="100"
+          />
+        </div>
+        <span class="text-sm text-muted mt-4">〜</span>
+        <div class="flex flex-col gap-1">
+          <label class="text-xs text-muted" for="interval-max">Max</label>
+          <input
+            id="interval-max"
+            type="number"
+            class="md-select w-32"
+            bind:value={config.scraping_interval_max_millis}
+            min="0"
+            step="100"
+          />
+        </div>
+      </div>
+      <div class="text-xs text-muted">リクエストごとにランダムな間隔を設定します</div>
+      {#if config.scraping_interval_min_millis > config.scraping_interval_max_millis}
+        <div class="text-xs text-error">Min は Max 以下にしてください</div>
+      {/if}
     </div>
 
     <div class="flex items-center gap-3">
