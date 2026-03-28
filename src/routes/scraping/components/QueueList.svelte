@@ -2,6 +2,7 @@
   import Button from "$lib/components/Button.svelte";
 
   interface ScrapingOption {
+    id: string;
     tags: string[];
     searchMode: string;
     scd: string;
@@ -11,7 +12,7 @@
 
   export let queue: ScrapingOption[] = [];
   export let clearQueue: (() => void) | undefined = undefined;
-  export let removeQueueItem: ((index: number) => void) | undefined = undefined;
+  export let removeQueueItem: ((id: string) => void) | undefined = undefined;
 </script>
 
 <div class="p-4 bg-surface-container-low rounded-lg mt-4">
@@ -51,7 +52,7 @@
           {#if removeQueueItem}
             <button
               class="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-surface-dim rounded text-error"
-              onclick={() => removeQueueItem && removeQueueItem(i)}
+              onclick={() => removeQueueItem && removeQueueItem(item.id)}
               title="Remove from queue"
             >
               <svg

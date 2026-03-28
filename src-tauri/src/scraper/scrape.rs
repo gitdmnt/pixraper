@@ -86,6 +86,7 @@ impl From<NovelData> for ItemRecord {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ScrapingOption {
+    pub id: String,
     pub tags: Vec<String>,
     pub search_mode: String,
     pub scd: String,

@@ -11,6 +11,7 @@
   import { onMount, onDestroy } from "svelte";
 
   interface ScrapingOption {
+    id: string;
     tags: string[];
     searchMode: string;
     scd: string;
@@ -129,8 +130,9 @@
   };
 
   const addQueue = () => {
-    console.log("Adding to queue:", scrapingOption);
-    invoke("add_queue", { option: scrapingOption })
+    const option = { ...scrapingOption, id: crypto.randomUUID() };
+    console.log("Adding to queue:", option);
+    invoke("add_queue", { option })
       .then(() => {
         console.log("Scraping option added to queue");
         fetchQueue();
@@ -152,8 +154,8 @@
       });
   };
 
-  const removeQueueItem = (index: number) => {
-    invoke("remove_queue_item", { index })
+  const removeQueueItem = (id: string) => {
+    invoke("remove_queue_item", { id })
       .then(() => {
         fetchQueue();
       })
