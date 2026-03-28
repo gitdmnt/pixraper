@@ -34,6 +34,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::config::get_config,
             commands::config::set_config,
+            commands::config::validate_cookies,
             commands::scraping::add_queue,
             commands::scraping::clear_queue,
             commands::scraping::remove_queue_item,
