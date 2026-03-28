@@ -35,8 +35,8 @@ enum Command {
     GetProgress(tokio::sync::oneshot::Sender<(usize, ScrapingProgress)>),
     /// キューの内容を取得する。
     GetQueue(tokio::sync::oneshot::Sender<Vec<ScrapingOption>>),
-    /// キューから特定のインデックスの要素を削除する。
-    Remove(usize),
+    /// キューから特定の ID の要素を削除する。
+    Remove(String),
     /// Workerの処理が完了したことを通知する。
     WorkerFinished,
     /// Worker が動作中かどうかを問い合わせる（主にテスト用）
@@ -239,10 +239,8 @@ impl QueryQueueActor {
                 Command::GetQueue(responder) => {
                     let _ = responder.send(self.queue.iter().cloned().collect());
                 }
-                Command::Remove(index) => {
-                    if index < self.queue.len() {
-                        self.queue.remove(index);
-                    }
+                Command::Remove(id) => {
+                    self.queue.retain(|opt| opt.id != id);
                 }
             }
         }
@@ -339,9 +337,9 @@ impl QueryQueueHandle {
         receiver.await.unwrap_or_else(|_| Vec::new())
     }
 
-    /// 特定のインデックスの要素を削除します。
-    pub async fn remove(&self, index: usize) {
-        let _ = self.sender.send(Command::Remove(index)).await;
+    /// 特定の ID の要素を削除します。
+    pub async fn remove_by_id(&self, id: String) {
+        let _ = self.sender.send(Command::Remove(id)).await;
     }
 
     /// キューが空かどうかを判定します（ユーティリティ）。
@@ -374,8 +372,9 @@ mod tests {
         }
     }
 
-    fn make_option() -> ScrapingOption {
+    fn make_option_with_id(id: &str) -> ScrapingOption {
         ScrapingOption {
+            id: id.to_string(),
             tags: vec!["test".into()],
             search_mode: "mode".into(),
             scd: "".into(),
@@ -383,6 +382,51 @@ mod tests {
             detailed: false,
             is_illust: true,
         }
+    }
+
+    fn make_option() -> ScrapingOption {
+        make_option_with_id("default-id")
+    }
+
+    #[tokio::test]
+    async fn remove_by_id_removes_correct_item() {
+        let cfg = Config::default();
+        let temp = std::env::temp_dir().join("pixraper_test_remove");
+        let app = Arc::new(DummyAppHandle::new(temp));
+        let client = reqwest::Client::builder().build().unwrap();
+        let handle = QueryQueueHandle::new_with_client_and_app(&cfg, app, client, true, true);
+
+        handle.add(make_option_with_id("a")).await;
+        handle.add(make_option_with_id("b")).await;
+        handle.add(make_option_with_id("c")).await;
+
+        handle.remove_by_id("b".to_string()).await;
+
+        // allow actor to process
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let queue = handle.get_queue().await;
+        assert_eq!(queue.len(), 2);
+        assert!(queue.iter().any(|o| o.id == "a"));
+        assert!(queue.iter().any(|o| o.id == "c"));
+        assert!(!queue.iter().any(|o| o.id == "b"), "b should be removed");
+    }
+
+    #[tokio::test]
+    async fn remove_by_id_nonexistent_id_is_noop() {
+        let cfg = Config::default();
+        let temp = std::env::temp_dir().join("pixraper_test_remove_noop");
+        let app = Arc::new(DummyAppHandle::new(temp));
+        let client = reqwest::Client::builder().build().unwrap();
+        let handle = QueryQueueHandle::new_with_client_and_app(&cfg, app, client, true, true);
+
+        handle.add(make_option_with_id("a")).await;
+        handle.add(make_option_with_id("b")).await;
+
+        handle.remove_by_id("nonexistent".to_string()).await;
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let queue = handle.get_queue().await;
+        assert_eq!(queue.len(), 2);
     }
 
     #[tokio::test]

@@ -34,9 +34,9 @@ pub async fn clear_queue(queue: State<'_, ScrapingHandle>) -> Result<(), String>
 #[tauri::command]
 pub async fn remove_queue_item(
     queue: State<'_, ScrapingHandle>,
-    index: usize,
+    id: String,
 ) -> Result<(), String> {
-    queue.remove(index).await;
+    queue.remove_by_id(id).await;
     Ok(())
 }
 
