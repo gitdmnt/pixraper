@@ -16,13 +16,8 @@
   let selectedProfileId: string | null = $state(null);
 
   invoke<Config>("get_config").then((value) => {
-    config = {
-      ...value,
-      cookie_profiles: value.cookie_profiles ?? [],
-    };
-    if (config.active_profile_id) {
-      selectedProfileId = config.active_profile_id;
-    } else if (config.cookie_profiles.length > 0) {
+    config = { ...value, cookie_profiles: value.cookie_profiles ?? [] };
+    if (config.cookie_profiles.length > 0) {
       selectedProfileId = config.cookie_profiles[0].id;
     }
   });
@@ -31,22 +26,12 @@
     config.cookie_profiles.find((p) => p.id === selectedProfileId) ?? null
   );
 
-  const activeProfileCookies = (cfg: Config): string | null => {
-    if (!cfg.active_profile_id) return null;
-    const profile = cfg.cookie_profiles.find((p) => p.id === cfg.active_profile_id);
-    return profile?.cookies ?? null;
-  };
-
   let saveError: string | null = $state(null);
 
   const saveConfig = async (cfg: Config) => {
-    const updated: Config = {
-      ...cfg,
-      cookies: activeProfileCookies(cfg),
-    };
     try {
-      await invoke("set_config", { newConfig: updated });
-      config = updated;
+      await invoke("set_config", { newConfig: cfg });
+      config = cfg;
       saveError = null;
     } catch (e) {
       saveError = String(e);
@@ -55,13 +40,12 @@
   };
 
   const handleSaveProfile = (profile: CookieProfile) => {
-    const updated: Config = {
+    saveConfig({
       ...config,
       cookie_profiles: config.cookie_profiles.map((p) =>
         p.id === profile.id ? profile : p
       ),
-    };
-    saveConfig(updated);
+    });
   };
 
   const handleAddProfile = () => {
@@ -71,33 +55,19 @@
       cookies: "",
       is_valid: null,
     };
-    const updated: Config = {
+    selectedProfileId = newProfile.id;
+    saveConfig({
       ...config,
       cookie_profiles: [...config.cookie_profiles, newProfile],
-    };
-    selectedProfileId = newProfile.id;
-    saveConfig(updated);
+    });
   };
 
   const handleDeleteProfile = (id: string) => {
     const remaining = config.cookie_profiles.filter((p) => p.id !== id);
-    const newActiveId =
-      config.active_profile_id === id
-        ? (remaining[0]?.id ?? null)
-        : config.active_profile_id;
-    const updated: Config = {
-      ...config,
-      cookie_profiles: remaining,
-      active_profile_id: newActiveId,
-    };
     if (selectedProfileId === id) {
       selectedProfileId = remaining[0]?.id ?? null;
     }
-    saveConfig(updated);
-  };
-
-  const handleSetActive = (id: string) => {
-    saveConfig({ ...config, active_profile_id: id });
+    saveConfig({ ...config, cookie_profiles: remaining });
   };
 
   const saveGeneralSettings = () => {
@@ -147,31 +117,25 @@
   <div class="md-card p-6 flex flex-col gap-4 max-w-4xl">
     <div class="text-base font-semibold">Cookie Profiles</div>
     <div class="text-xs text-muted">
-      複数の Pixiv アカウントの Cookie を保存できます。アクティブなプロファイルがスクレイパーに使用されます。
+      登録された全プロファイルをジョブ単位で順番に使い回します。プロファイルが1件の場合はそのプロファイルのみ使用します。
     </div>
 
     <div class="flex flex-row gap-6">
-      <!-- Profile list -->
       <div class="w-56 shrink-0">
         <CookieProfileList
           profiles={config.cookie_profiles}
-          activeProfileId={config.active_profile_id}
           {selectedProfileId}
           onselect={(id) => (selectedProfileId = id)}
           onadd={handleAddProfile}
           ondelete={handleDeleteProfile}
-          onsetActive={handleSetActive}
         />
       </div>
 
-      <!-- Editor -->
       <div class="flex-1 min-w-0">
         {#if selectedProfile}
           <CookieProfileEditor
             profile={selectedProfile}
-            activeProfileId={config.active_profile_id}
             onsave={handleSaveProfile}
-            onsetActive={handleSetActive}
           />
         {:else}
           <div class="text-sm text-muted pt-4">

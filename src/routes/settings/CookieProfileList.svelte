@@ -2,13 +2,11 @@
   import type { CookieProfile } from "./type.d.ts";
 
   export let profiles: CookieProfile[] = [];
-  export let activeProfileId: string | null = null;
   export let selectedId: string | null = null;
 
   export let onselect: (id: string) => void = () => {};
   export let onadd: () => void = () => {};
   export let ondelete: (id: string) => void = () => {};
-  export let onsetActive: (id: string) => void = () => {};
 
   const validityBadge = (isValid: boolean | null) => {
     if (isValid === true) return { label: "Valid", cls: "text-emerald-700 bg-emerald-50 border-emerald-200" };
@@ -20,10 +18,7 @@
 <div class="flex flex-col gap-2">
   <div class="flex items-center justify-between">
     <div class="text-sm font-medium">Cookie Profiles</div>
-    <button
-      class="btn-md text-xs px-3 py-1"
-      onclick={onadd}
-    >+ Add</button>
+    <button class="btn-md text-xs px-3 py-1" onclick={onadd}>+ Add</button>
   </div>
 
   {#if profiles.length === 0}
@@ -41,24 +36,12 @@
           onclick={() => onselect(profile.id)}
           onkeydown={(e) => e.key === 'Enter' && onselect(profile.id)}
         >
-          <!-- Active indicator -->
-          <div class="w-2 h-2 rounded-full shrink-0 {activeProfileId === profile.id ? 'bg-emerald-500' : 'bg-transparent border border-(--md-outline)'}"></div>
-
           <div class="flex-1 min-w-0">
             <div class="text-sm font-medium truncate">{profile.name || "Unnamed"}</div>
           </div>
 
-          <!-- Validity badge -->
           <span class="text-xs px-2 py-0.5 rounded-full border shrink-0 {badge.cls}">{badge.label}</span>
 
-          <!-- Set active / delete -->
-          {#if activeProfileId !== profile.id}
-            <button
-              class="text-xs text-muted hover:text-(--md-primary) transition-colors px-1 shrink-0"
-              title="Set as active"
-              onclick={(e) => { e.stopPropagation(); onsetActive(profile.id); }}
-            >▶</button>
-          {/if}
           <button
             class="text-xs text-muted hover:text-error transition-colors px-1 shrink-0"
             title="Delete profile"

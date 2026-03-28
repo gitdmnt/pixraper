@@ -41,6 +41,8 @@ enum Command {
     WorkerFinished,
     /// Worker が動作中かどうかを問い合わせる（主にテスト用）
     IsWorkerRunning(tokio::sync::oneshot::Sender<bool>),
+    /// 現在のプロファイルインデックスを取得する（主にテスト用）
+    GetProfileIndex(tokio::sync::oneshot::Sender<usize>),
 }
 
 /// Actor の実体。キューと進捗、HTTP クライアント、設定を保持する。
@@ -60,6 +62,8 @@ struct QueryQueueActor {
     spawn_workers_async: bool,
     /// テスト用: Worker の実行を模擬する（実際の処理を行わず完了通知だけ送る）
     simulate_workers: bool,
+    /// cookie_profiles のローテーション用インデックス
+    profile_index: usize,
 }
 
 impl QueryQueueActor {
@@ -114,6 +118,7 @@ impl QueryQueueActor {
             sender,
             spawn_workers_async,
             simulate_workers,
+            profile_index: 0,
         }
     }
 
@@ -163,7 +168,16 @@ impl QueryQueueActor {
                     if let Some(option) = self.queue.pop_front() {
                         let client = self.client.clone();
                         let progress = self.progress.clone(); // Arc<Mutex>
-                        let cfg = self.cfg.clone();
+
+                        // cookie_profiles が存在する場合はローテーションで使用し、
+                        // 空の場合は Config.cookies にフォールバックする。
+                        let mut cfg = self.cfg.clone();
+                        if !cfg.cookie_profiles.is_empty() {
+                            let idx = self.profile_index % cfg.cookie_profiles.len();
+                            cfg.cookies = Some(cfg.cookie_profiles[idx].cookies.clone());
+                            self.profile_index += 1;
+                        }
+
                         let app_handle = self.app_handle.clone();
                         let sender = self.sender.clone(); // Self sender
 
@@ -231,6 +245,9 @@ impl QueryQueueActor {
                 }
                 Command::IsWorkerRunning(responder) => {
                     let _ = responder.send(self.worker_running);
+                }
+                Command::GetProfileIndex(responder) => {
+                    let _ = responder.send(self.profile_index);
                 }
                 Command::GetProgress(responder) => {
                     let p = self.progress.lock().await;
@@ -347,6 +364,16 @@ impl QueryQueueHandle {
         let (queue_length, _) = self.get_progress().await;
         queue_length == 0
     }
+
+    /// 現在のプロファイルインデックスを取得します（テスト用）。
+    pub async fn get_profile_index(&self) -> usize {
+        let (responder, receiver) = tokio::sync::oneshot::channel();
+        let _ = self
+            .sender
+            .send(Command::GetProfileIndex(responder))
+            .await;
+        receiver.await.unwrap_or(0)
+    }
 }
 
 #[cfg(test)]
@@ -460,6 +487,83 @@ mod tests {
         let (q_len, progress) = handle.get_progress().await;
         assert_eq!(q_len, 0);
         assert_eq!(progress.status, ScrapingStatus::Stopped);
+    }
+
+    fn make_config_with_profiles(cookies: Vec<&str>) -> Config {
+        use crate::config::CookieProfile;
+        let mut cfg = Config::default();
+        cfg.cookie_profiles = cookies
+            .into_iter()
+            .enumerate()
+            .map(|(i, c)| CookieProfile {
+                id: format!("profile-{i}"),
+                name: format!("Profile {i}"),
+                cookies: c.to_string(),
+                is_valid: None,
+            })
+            .collect();
+        cfg
+    }
+
+    #[tokio::test]
+    async fn profile_index_increments_per_job() {
+        let cfg = make_config_with_profiles(vec!["cookie_a", "cookie_b", "cookie_c"]);
+        let temp = std::env::temp_dir().join("pixraper_test_profile_rotation");
+        let app = Arc::new(DummyAppHandle::new(temp));
+        let client = reqwest::Client::builder().build().unwrap();
+        let handle = QueryQueueHandle::new_with_client_and_app(&cfg, app, client, true, true);
+
+        handle.add(make_option_with_id("j1")).await;
+        handle.add(make_option_with_id("j2")).await;
+        handle.add(make_option_with_id("j3")).await;
+
+        let token = tokio_util::sync::CancellationToken::new();
+        handle.start(token).await;
+
+        let res = timeout(Duration::from_secs(3), async {
+            loop {
+                if handle.is_empty().await {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await;
+
+        assert!(res.is_ok(), "Queue did not empty in time");
+
+        // 3件処理したのでインデックスは3になっているはず
+        let idx = handle.get_profile_index().await;
+        assert_eq!(idx, 3, "profile_index should be 3 after 3 jobs");
+    }
+
+    #[tokio::test]
+    async fn profile_index_does_not_increment_when_no_profiles() {
+        let cfg = Config::default(); // cookie_profiles は空
+        let temp = std::env::temp_dir().join("pixraper_test_no_profiles");
+        let app = Arc::new(DummyAppHandle::new(temp));
+        let client = reqwest::Client::builder().build().unwrap();
+        let handle = QueryQueueHandle::new_with_client_and_app(&cfg, app, client, true, true);
+
+        handle.add(make_option_with_id("j1")).await;
+        handle.add(make_option_with_id("j2")).await;
+
+        let token = tokio_util::sync::CancellationToken::new();
+        handle.start(token).await;
+
+        let _ = timeout(Duration::from_secs(3), async {
+            loop {
+                if handle.is_empty().await {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await;
+
+        // プロファイルが空の場合はインデックスが増えない
+        let idx = handle.get_profile_index().await;
+        assert_eq!(idx, 0, "profile_index should stay 0 when no profiles");
     }
 
     #[tokio::test]

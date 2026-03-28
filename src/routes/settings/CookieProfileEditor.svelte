@@ -5,10 +5,7 @@
   import { parseCookies, hasPhpSessionId } from "./cookieParser.ts";
 
   export let profile: CookieProfile;
-  export let activeProfileId: string | null = null;
-
   export let onsave: (profile: CookieProfile) => void = () => {};
-  export let onsetActive: (id: string) => void = () => {};
 
   let validating = false;
   let validateError: string | null = null;
@@ -35,10 +32,6 @@
   const handleSave = () => {
     onsave(profile);
   };
-
-  const handleSetActive = () => {
-    onsetActive(profile.id);
-  };
 </script>
 
 <div class="flex flex-col gap-4">
@@ -50,11 +43,6 @@
       placeholder="Profile name"
       bind:value={profile.name}
     />
-    {#if activeProfileId === profile.id}
-      <span class="text-xs px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">Active</span>
-    {:else}
-      <Button variant="outlined" onclick={handleSetActive}>Set Active</Button>
-    {/if}
   </div>
 
   <!-- Cookie input -->
@@ -67,7 +55,6 @@
       bind:value={profile.cookies}
     ></textarea>
 
-    <!-- PHPSESSID warning -->
     {#if missingPhpSession}
       <div class="text-xs px-3 py-2 rounded-lg bg-amber-50 text-amber-700 border border-amber-200">
         PHPSESSID が含まれていません。ログインが必要なリクエストは失敗する可能性があります。
