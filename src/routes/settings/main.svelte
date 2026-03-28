@@ -27,7 +27,9 @@
     }
   });
 
-  $: selectedProfile = config.cookie_profiles.find((p) => p.id === selectedProfileId) ?? null;
+  const selectedProfile = $derived(
+    config.cookie_profiles.find((p) => p.id === selectedProfileId) ?? null
+  );
 
   const activeProfileCookies = (cfg: Config): string | null => {
     if (!cfg.active_profile_id) return null;
@@ -35,25 +37,31 @@
     return profile?.cookies ?? null;
   };
 
-  const saveConfig = (cfg: Config) => {
+  let saveError: string | null = $state(null);
+
+  const saveConfig = async (cfg: Config) => {
     const updated: Config = {
       ...cfg,
       cookies: activeProfileCookies(cfg),
     };
-    invoke("set_config", { newConfig: updated }).catch((e) => {
+    try {
+      await invoke("set_config", { newConfig: updated });
+      config = updated;
+      saveError = null;
+    } catch (e) {
+      saveError = String(e);
       console.error("Failed to save config:", e);
-    });
-    config = updated;
+    }
   };
 
   const handleSaveProfile = (profile: CookieProfile) => {
-    config = {
+    const updated: Config = {
       ...config,
       cookie_profiles: config.cookie_profiles.map((p) =>
         p.id === profile.id ? profile : p
       ),
     };
-    saveConfig(config);
+    saveConfig(updated);
   };
 
   const handleAddProfile = () => {
@@ -63,12 +71,12 @@
       cookies: "",
       is_valid: null,
     };
-    config = {
+    const updated: Config = {
       ...config,
       cookie_profiles: [...config.cookie_profiles, newProfile],
     };
     selectedProfileId = newProfile.id;
-    saveConfig(config);
+    saveConfig(updated);
   };
 
   const handleDeleteProfile = (id: string) => {
@@ -77,7 +85,7 @@
       config.active_profile_id === id
         ? (remaining[0]?.id ?? null)
         : config.active_profile_id;
-    config = {
+    const updated: Config = {
       ...config,
       cookie_profiles: remaining,
       active_profile_id: newActiveId,
@@ -85,12 +93,11 @@
     if (selectedProfileId === id) {
       selectedProfileId = remaining[0]?.id ?? null;
     }
-    saveConfig(config);
+    saveConfig(updated);
   };
 
   const handleSetActive = (id: string) => {
-    config = { ...config, active_profile_id: id };
-    saveConfig(config);
+    saveConfig({ ...config, active_profile_id: id });
   };
 
   const saveGeneralSettings = () => {
@@ -128,8 +135,11 @@
       <div class="text-xs text-muted">Minimum delay between requests</div>
     </div>
 
-    <div>
+    <div class="flex items-center gap-3">
       <Button variant="contained" onclick={saveGeneralSettings}>Save</Button>
+      {#if saveError}
+        <span class="text-xs text-error">{saveError}</span>
+      {/if}
     </div>
   </div>
 
