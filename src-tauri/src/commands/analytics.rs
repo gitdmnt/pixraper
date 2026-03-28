@@ -30,19 +30,20 @@ pub async fn get_all_tags(
     Ok(count_tags(items))
 }
 
-/// CSVファイルを読み込んでメモリにキャッシュし、生データを返します。
+/// CSVファイルを読み込んでメモリにキャッシュし、件数を返します。
 #[tauri::command]
 pub async fn load_dataset(
     path: String,
     state: tauri::State<'_, AnalyticsState>,
-) -> Result<Vec<ItemRecord>, String> {
+) -> Result<usize, String> {
     let items = load_items(&path)?;
+    let count = items.len();
 
     // Update cache
     let mut cache = state.0.lock().await;
-    *cache = Some(items.clone());
+    *cache = Some(items);
 
-    Ok(items)
+    Ok(count)
 }
 
 /// キャッシュされたデータセットに対して集計とソートを行います。
