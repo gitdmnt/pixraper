@@ -155,12 +155,6 @@ impl Worker {
             }
         }
 
-        // mark stopped
-        {
-            let mut p = progress.lock().await;
-            p.status = ScrapingStatus::Stopped;
-        }
-
         Ok(())
     }
 }
