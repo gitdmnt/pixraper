@@ -20,26 +20,27 @@
     isIllust: boolean;
   }
 
-  let scrapingOption: ScrapingOption = {
+  let scrapingOption: ScrapingOption = $state({
+    id: crypto.randomUUID(),
     tags: [] as string[],
     searchMode: "s_tag",
     scd: Temporal.Now.plainDateISO().toString(),
     ecd: Temporal.Now.plainDateISO().toString(),
     detailed: false,
     isIllust: true,
-  };
+  });
 
   // UI state
-  let isRunning = false;
-  let scrapedItems = 0;
-  let totalItems = 0;
-  let queue: ScrapingOption[] = [];
+  let isRunning = $state(false);
+  let scrapedItems = $state(0);
+  let totalItems = $state(0);
+  let queue: ScrapingOption[] = $state([]);
   let currentItem: string | null = $state(null);
   let lastError: string | null = $state(null);
 
-  $: progressPercent = totalItems
-    ? Math.round((scrapedItems / totalItems) * 100)
-    : 0;
+  const progressPercent = $derived(
+    totalItems ? Math.round((scrapedItems / totalItems) * 100) : 0
+  );
 
   // Polling logic
   let pollInterval: number | undefined;

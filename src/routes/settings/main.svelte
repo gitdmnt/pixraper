@@ -94,7 +94,7 @@
     </div>
 
     <div class="flex flex-col gap-1">
-      <label class="text-sm font-medium">Scraping Interval (ms)</label>
+      <span class="text-sm font-medium">Scraping Interval (ms)</span>
       <div class="flex items-center gap-2">
         <div class="flex flex-col gap-1">
           <label class="text-xs text-muted" for="interval-min">Min</label>
@@ -145,7 +145,7 @@
       <div class="w-56 shrink-0">
         <CookieProfileList
           profiles={config.cookie_profiles}
-          {selectedProfileId}
+          selectedId={selectedProfileId}
           onselect={(id) => (selectedProfileId = id)}
           onadd={handleAddProfile}
           ondelete={handleDeleteProfile}
