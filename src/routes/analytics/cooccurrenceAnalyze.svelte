@@ -5,17 +5,15 @@
   import { invoke } from "@tauri-apps/api/core";
   import { onMount, tick } from "svelte";
   // 型定義
-  interface TagStats {
+  interface TagCount {
     tag: string;
     count: number;
-    _viewCount: number;
-    _bookmarkCount: number;
   }
 
   // 状態変数
   let searchQuery = "";
   let suggestedTags: string[] = [];
-  let tagCounts: TagStats[] = [];
+  let tagCounts: TagCount[] = [];
   let targetTag: string | null = null;
 
   interface Filter {
@@ -36,12 +34,12 @@
     searchQuery: "",
   };
 
-  let cooccurrenceResults: TagStats[] = [];
+  let cooccurrenceResults: TagCount[] = [];
 
   // タグ一覧を取得
   const fetchAllTags = async () => {
     try {
-      const entries = await invoke<TagStats[]>("get_all_tags");
+      const entries = await invoke<TagCount[]>("get_all_tags");
       tagCounts = entries ?? [];
     } catch (e) {
       console.error("Failed to fetch all tags:", e);
@@ -119,7 +117,7 @@
     if (!tag) return;
     isLoading = true;
     try {
-      const res = await invoke<{ counts: TagStats[]; total: number }>(
+      const res = await invoke<{ counts: TagCount[]; total: number }>(
         "calculate_co_occurence",
         {
           filter,

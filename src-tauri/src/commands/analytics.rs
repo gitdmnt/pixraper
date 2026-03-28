@@ -9,8 +9,8 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::analytics::{
-    CooccurrenceEntry, CooccurrenceResult, Filter, ItemRecordVecExt, SortKey, TagStats,
-    TagStatsVecExt,
+    CooccurrenceEntry, CooccurrenceResult, Filter, ItemRecordVecExt, SortKey, TagCount, TagStats,
+    TagStatsVecExt, count_tags,
 };
 use crate::csv::load_items;
 use crate::scraper::scrape::ItemRecord;
@@ -21,34 +21,13 @@ pub struct AnalyticsState(pub Arc<Mutex<Option<Vec<ItemRecord>>>>);
 #[tauri::command]
 pub async fn get_all_tags(
     state: tauri::State<'_, AnalyticsState>,
-) -> Result<Vec<TagStats>, String> {
+) -> Result<Vec<TagCount>, String> {
     let cache = state.0.lock().await;
     let items = match cache.as_ref() {
         Some(v) => v,
         None => return Ok(Vec::new()),
     };
-
-    let mut map: HashMap<String, u64> = HashMap::new();
-    for item in items {
-        for tag in &item.tags {
-            *map.entry(tag.clone()).or_insert(0) += 1;
-        }
-    }
-
-    let mut entries: Vec<TagStats> = map
-        .into_iter()
-        .map(|(tag, count)| TagStats {
-            tag,
-            count,
-            view_count: 0,
-            bookmark_count: 0,
-            normalized_score: 0.0,
-        })
-        .collect();
-
-    entries.sort_by(|a, b| b.count.cmp(&a.count));
-
-    Ok(entries)
+    Ok(count_tags(items))
 }
 
 /// CSVファイルを読み込んでメモリにキャッシュし、生データを返します。
