@@ -95,9 +95,26 @@ pub async fn save_as_csv(
     Ok(())
 }
 
+/// bool フィールドのパースエラーを明示的なメッセージで返す純粋関数。
+fn parse_bool_field(value: &str, field_name: &str, row_id: u64) -> Result<bool, String> {
+    value.parse::<bool>().map_err(|_| {
+        format!(
+            "'{}' の値 '{}' を bool に変換できません（行ID: {}）",
+            field_name, value, row_id
+        )
+    })
+}
+
 /// CSVファイルからアイテム一覧を読み込みます。
 pub fn load_items(path: &str) -> Result<Vec<ItemRecord>, String> {
-    let mut rdr = csv::Reader::from_path(path).map_err(|e| e.to_string())?;
+    let rdr = csv::Reader::from_path(path).map_err(|e| e.to_string())?;
+    load_items_from_reader(rdr)
+}
+
+/// CSV リーダーからアイテム一覧を読み込む内部関数（テスト容易性のため抽出）。
+fn load_items_from_reader<R: std::io::Read>(
+    mut rdr: csv::Reader<R>,
+) -> Result<Vec<ItemRecord>, String> {
     let mut items = Vec::new();
 
     // ヘッダーの手動マッピングなどを避けるため、各行をデシリアライズします。
@@ -105,7 +122,7 @@ pub fn load_items(path: &str) -> Result<Vec<ItemRecord>, String> {
     #[derive(serde::Deserialize)]
     struct CsvRow {
         #[serde(rename = "Is Illust")]
-        is_illust: Option<String>, // bool.to_string() -> "true"/"false
+        is_illust: String, // bool.to_string() -> "true"/"false"
         #[serde(rename = "ID")]
         id: u64,
         #[serde(rename = "Title")]
@@ -146,14 +163,14 @@ pub fn load_items(path: &str) -> Result<Vec<ItemRecord>, String> {
         };
 
         items.push(ItemRecord {
-            is_illust: record.is_illust.is_none_or(|v| v.parse().unwrap_or(true)),
+            is_illust: parse_bool_field(&record.is_illust, "Is Illust", record.id)?,
             id: record.id,
             title: record.title,
-            x_restrict: record.x_restrict.parse().unwrap_or(false),
+            x_restrict: parse_bool_field(&record.x_restrict, "X Restrict", record.id)?,
             tags,
             user_id: record.user_id,
             create_date: record.create_date,
-            ai_type: record.ai_type.parse().unwrap_or(false),
+            ai_type: parse_bool_field(&record.ai_type, "AI Type", record.id)?,
             width: record.width,
             height: record.height,
             text_count: record.text_count,
@@ -165,4 +182,67 @@ pub fn load_items(path: &str) -> Result<Vec<ItemRecord>, String> {
     }
 
     Ok(items)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const VALID_CSV: &str = "\
+Is Illust,ID,Title,X Restrict,Tags,User ID,Create Date,AI Type,Width,Height,Text Count,Word Count,Original,Bookmark Count,View Count\n\
+true,1,Test,false,tag1;tag2,100,2024-01-01,false,1920,1080,,,false,,\n\
+";
+
+    const INVALID_BOOL_CSV: &str = "\
+Is Illust,ID,Title,X Restrict,Tags,User ID,Create Date,AI Type,Width,Height,Text Count,Word Count,Original,Bookmark Count,View Count\n\
+TRUE,1,Test,false,tag1,100,2024-01-01,false,,,,,false,,\n\
+";
+
+    const MISSING_IS_ILLUST_CSV: &str = "\
+ID,Title,X Restrict,Tags,User ID,Create Date,AI Type,Width,Height,Text Count,Word Count,Original,Bookmark Count,View Count\n\
+1,Test,false,tag1,100,2024-01-01,false,,,,,false,,\n\
+";
+
+    #[test]
+    fn parse_bool_field_accepts_true_false() {
+        assert_eq!(parse_bool_field("true", "F", 1).unwrap(), true);
+        assert_eq!(parse_bool_field("false", "F", 1).unwrap(), false);
+    }
+
+    #[test]
+    fn parse_bool_field_rejects_invalid_value() {
+        assert!(parse_bool_field("TRUE", "F", 1).is_err());
+        assert!(parse_bool_field("1", "F", 1).is_err());
+        assert!(parse_bool_field("yes", "F", 1).is_err());
+    }
+
+    #[test]
+    fn parse_bool_field_error_message_contains_field_name_and_value() {
+        let err = parse_bool_field("BAD", "X Restrict", 42).unwrap_err();
+        assert!(err.contains("X Restrict"), "error should contain field name");
+        assert!(err.contains("BAD"), "error should contain value");
+        assert!(err.contains("42"), "error should contain row ID");
+    }
+
+    #[test]
+    fn load_items_valid_csv_parses_bool_fields_correctly() {
+        let rdr = csv::Reader::from_reader(VALID_CSV.as_bytes());
+        let items = load_items_from_reader(rdr).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].is_illust, true);
+        assert_eq!(items[0].x_restrict, false);
+        assert_eq!(items[0].ai_type, false);
+    }
+
+    #[test]
+    fn load_items_invalid_bool_value_returns_error() {
+        let rdr = csv::Reader::from_reader(INVALID_BOOL_CSV.as_bytes());
+        assert!(load_items_from_reader(rdr).is_err());
+    }
+
+    #[test]
+    fn load_items_missing_is_illust_column_returns_error() {
+        let rdr = csv::Reader::from_reader(MISSING_IS_ILLUST_CSV.as_bytes());
+        assert!(load_items_from_reader(rdr).is_err());
+    }
 }
