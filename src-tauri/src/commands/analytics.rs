@@ -22,12 +22,14 @@ pub struct AnalyticsState(pub Arc<Mutex<Option<Vec<ItemRecord>>>>);
 pub async fn get_all_tags(
     state: tauri::State<'_, AnalyticsState>,
 ) -> Result<Vec<TagCount>, String> {
-    let cache = state.0.lock().await;
-    let items = match cache.as_ref() {
-        Some(v) => v,
-        None => return Ok(Vec::new()),
+    let items = {
+        let cache = state.0.lock().await;
+        match cache.as_ref() {
+            Some(v) => v.clone(),
+            None => return Ok(Vec::new()),
+        }
     };
-    Ok(count_tags(items))
+    Ok(count_tags(&items))
 }
 
 /// CSVファイルを読み込んでメモリにキャッシュし、件数を返します。
@@ -53,17 +55,20 @@ pub async fn calculate_tag_ranking(
     sort_key: SortKey,
     state: tauri::State<'_, AnalyticsState>,
 ) -> Result<Vec<TagStats>, String> {
-    let cache = state.0.lock().await;
-    let items = cache
-        .as_ref()
-        .ok_or("No dataset loaded. Please import CSV first.")?;
+    let items = {
+        let cache = state.0.lock().await;
+        cache
+            .as_ref()
+            .ok_or("No dataset loaded. Please import CSV first.")?
+            .clone()
+    };
 
     // 1) Filter
     let filtered_items = items.filter_by(&filter);
 
     // 2) PASS 1: Compute per-artist statistics (log(bookmark+1)), and global stats for fallback
     let (global_mean, global_std) = filtered_items.global_stats();
-    let artist_stats = filtered_items.artist_stats();
+    let artist_stats = filtered_items.artist_stats((global_mean, global_std));
     // 3) PASS 2: Aggregate tags and accumulate normalized Z-scores
     let mut stats: Vec<TagStats> =
         filtered_items.tag_stats(&artist_stats, (global_mean, global_std));
@@ -88,10 +93,13 @@ pub async fn calculate_co_occurence(
     tag: String,
     state: tauri::State<'_, AnalyticsState>,
 ) -> Result<CooccurrenceResult, String> {
-    let cache = state.0.lock().await;
-    let items = cache
-        .as_ref()
-        .ok_or("No dataset loaded. Please import CSV first.")?;
+    let items = {
+        let cache = state.0.lock().await;
+        cache
+            .as_ref()
+            .ok_or("No dataset loaded. Please import CSV first.")?
+            .clone()
+    };
     let filtered_items = items.filter_by(&filter);
 
     let mut co_occurrence: HashMap<String, u64> = HashMap::new();
