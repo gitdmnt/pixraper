@@ -15,25 +15,25 @@
   export let removeQueueItem: ((id: string) => void) | undefined = undefined;
 </script>
 
-<div class="p-4 bg-surface-container-low rounded-lg mt-4">
-  <div class="flex justify-between items-center mb-4">
-    <h3 class="text-lg font-bold">Queue ({queue.length})</h3>
+<div class="md-card p-4 flex flex-col gap-4">
+  <div class="flex justify-between items-center">
+    <div class="font-medium">Queue ({queue.length})</div>
     <Button variant="text" onclick={clearQueue} disabled={queue.length === 0}
       >Clear Queue</Button
     >
   </div>
 
-  <div class="space-y-2 max-h-60 overflow-y-auto pr-2">
+  <div class="flex flex-col gap-2 max-h-60 overflow-y-auto pr-1">
     {#each queue as item, i}
       <div
-        class="p-3 bg-surface-container rounded flex justify-between items-center group"
+        class="p-3 bg-surface-container rounded-lg flex justify-between items-center group"
       >
-        <div>
-          <div class="font-bold flex gap-2 flex-wrap">
+        <div class="flex flex-col gap-1">
+          <div class="flex gap-2 flex-wrap">
             {#if item.tags.length > 0}
               {#each item.tags as tag}
                 <span
-                  class="bg-primary-container text-on-primary-container px-2 py-0.5 rounded-full text-xs"
+                  class="bg-primary-container text-on-primary-container px-2 py-0.5 rounded-full text-xs font-medium"
                   >{tag}</span
                 >
               {/each}
@@ -41,17 +41,17 @@
               <span class="text-outline text-sm italic">No tags</span>
             {/if}
           </div>
-          <div class="text-xs text-outline mt-1">
+          <div class="text-xs text-outline">
             {item.searchMode} | {item.scd} ~ {item.ecd} | Detailed: {item.detailed
               ? "Yes"
               : "No"}
           </div>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 shrink-0">
           <div class="text-xs text-outline font-mono">#{i + 1}</div>
           {#if removeQueueItem}
             <button
-              class="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-surface-dim rounded text-error"
+              class="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-surface-dim rounded text-error cursor-pointer"
               onclick={() => removeQueueItem && removeQueueItem(item.id)}
               title="Remove from queue"
             >
@@ -71,7 +71,7 @@
         </div>
       </div>
     {:else}
-      <div class="text-center text-outline py-4">Queue is empty</div>
+      <div class="text-center text-outline py-6 text-sm">Queue is empty</div>
     {/each}
   </div>
 </div>

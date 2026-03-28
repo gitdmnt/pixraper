@@ -21,12 +21,24 @@
   .btn-outlined {
     background: transparent;
     color: var(--md-primary);
-    border: 1px solid var(--md-outline);
+    border: 1px solid var(--md-outline-strong);
+    box-shadow: none;
   }
+
+  .btn-outlined:hover:not(:disabled) {
+    background: var(--md-surface-variant);
+    opacity: 1;
+  }
+
   .btn-text {
     background: transparent;
     color: var(--md-primary);
     box-shadow: none;
     padding: 6px 10px;
+  }
+
+  .btn-text:hover:not(:disabled) {
+    background: var(--md-surface-variant);
+    opacity: 1;
   }
 </style>

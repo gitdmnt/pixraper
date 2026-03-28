@@ -149,59 +149,51 @@
 
 <div class="h-full flex flex-col gap-4 overflow-hidden">
   <TopAppBar title="Tag Co-occurrence Analysis">
-    <div slot="actions" class="p-4 flex flex-row gap-4 items-center">
-      <div class="flex flex-row gap-2 items-center">
-        <div class="text-sm text-neutral-700">
-          選択中: <span class="font-bold text-(--md-primary)"
-            >{targetTag || "なし"}</span
+    <div slot="actions" class="flex flex-row gap-4 items-center">
+      <div class="text-sm text-muted">
+        選択中: <span class="font-bold text-(--md-primary)"
+          >{targetTag || "なし"}</span
+        >
+        (母数: <span class="font-mono">{targetTag ? totalInSubset : 0}</span>件)
+      </div>
+      <div class="relative w-64">
+        <input
+          type="text"
+          bind:value={searchQuery}
+          onkeydown={handleKeyDown}
+          placeholder="タグを入力して検索..."
+          class="md-search-input w-full"
+        />
+        {#if searchQuery && targetTag !== searchQuery}
+          <div
+            class="absolute top-full left-0 w-full md-card border border-(--md-outline) mt-1 max-h-60 overflow-y-auto z-50"
           >
-          (母数:
-          <span class="font-mono">{targetTag ? totalInSubset : 0}</span>件)
-        </div>
-        <div class="w-64">
-          <input
-            type="text"
-            bind:value={searchQuery}
-            onkeydown={handleKeyDown}
-            placeholder="タグを入力して検索..."
-            class="w-full px-3 py-2 border border-neutral-300 rounded-lg text-neutral-800 focus:outline-none focus:ring-2 focus:ring-(--md-primary)"
-          />
-          <!-- 簡易的なサジェストリスト -->
-          {#if searchQuery && targetTag !== searchQuery}
-            <div
-              class="absolute w-64 bg-white border border-neutral-200 rounded-lg shadow-xl mt-1 max-h-60 overflow-y-auto"
-            >
-              {#each suggestedTags as tag, i}
-                <button
-                  id={"suggest-" + i}
-                  class={`w-full text-left px-3 py-2 text-neutral-800 text-sm ${
-                    i === selectedIndex
-                      ? "bg-neutral-100 font-semibold"
-                      : "hover:bg-neutral-100"
-                  }`}
-                  onclick={() => selectTag(tag)}
-                  onmouseenter={() => (selectedIndex = i)}
-                  onmouseleave={() => (selectedIndex = -1)}
+            {#each suggestedTags as tag, i}
+              <button
+                id={"suggest-" + i}
+                class="w-full text-left px-3 py-2 text-sm transition-colors {i ===
+                selectedIndex
+                  ? 'bg-surface-container font-semibold'
+                  : 'hover:bg-surface-container-low'}"
+                onclick={() => selectTag(tag)}
+                onmouseenter={() => (selectedIndex = i)}
+                onmouseleave={() => (selectedIndex = -1)}
+              >
+                {tag}
+                <span class="text-muted text-xs ml-1"
+                  >({tagCounts.find((entry) => entry.tag === tag)?.count ||
+                    0})</span
                 >
-                  {tag}
-                  <span class="text-neutral-400 text-xs"
-                    >({tagCounts.find((entry) => entry.tag === tag)?.count ||
-                      0})</span
-                  >
-                </button>
-              {/each}
-            </div>
-          {/if}
-        </div>
+              </button>
+            {/each}
+          </div>
+        {/if}
       </div>
     </div>
   </TopAppBar>
 
   <div class="h-full w-full flex flex-row gap-2">
-    <!-- 結果表示エリア -->
-    <main
-      class="flex-1 flex flex-col min-h-0 bg-white rounded-xl border border-neutral-200 overflow-hidden"
-    >
+    <main class="flex-1 flex flex-col min-h-0 md-card overflow-hidden">
       {#if targetTag && cooccurrenceResults.length > 0}
         <TagList
           items={cooccurrenceResults.map((e) => ({
@@ -213,15 +205,15 @@
           onclick={handleTagClick}
         />
       {:else if targetTag}
-        <div class="p-8 text-center text-neutral-500">
-          <p>共起するタグが見つかりませんでした。</p>
+        <div class="p-8 text-center text-muted text-sm">
+          共起するタグが見つかりませんでした。
         </div>
       {:else}
         <div
-          class="p-8 text-center text-neutral-400 flex flex-col items-center justify-center h-full"
+          class="p-8 text-center text-muted flex flex-col items-center justify-center h-full gap-2"
         >
-          <div class="text-4xl mb-2">🔍</div>
-          <p>左上のボックスから分析したいタグを検索して選択してください。</p>
+          <div class="text-3xl">🔍</div>
+          <p class="text-sm">左上のボックスから分析したいタグを検索して選択してください。</p>
         </div>
       {/if}
     </main>

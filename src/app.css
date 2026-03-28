@@ -1,14 +1,21 @@
 @import "tailwindcss";
 
-/* Material3-like design tokens (simple approximation) */
+/* Material3-like design tokens */
 :root {
     --md-surface: #ffffff;
     --md-on-surface: #111827;
-    /* neutral-900 */
     --md-primary: #6750a4;
     --md-on-primary: #ffffff;
     --md-surface-variant: #f4effb;
+    --md-on-surface-variant: #6b7280;
     --md-outline: #e6dff6;
+    --md-outline-strong: #c4b8d9;
+    --md-error: #b3261e;
+    --md-surface-container-low: #f8f5ff;
+    --md-surface-container: #f0eaf9;
+    --md-surface-dim: #e5ddf5;
+    --md-primary-container: #eaddff;
+    --md-on-primary-container: #21005d;
     --md-elev-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.04);
 }
 
@@ -24,33 +31,39 @@
 }
 
 .md-search-input {
-    background: var(--md-surface-variant, #f3f4f6);
+    background: var(--md-surface-variant);
     border-radius: 20px;
     padding: 8px 12px;
     border: 1px solid var(--md-outline);
     min-width: 200px;
+    outline: none;
+    transition: border-color 0.15s;
+}
+
+.md-search-input:focus {
+    border-color: var(--md-primary);
 }
 
 .md-select {
     padding: 8px 10px;
     border-radius: 8px;
-    border: 1px solid var(--md-outline);
+    border: 1px solid var(--md-outline-strong);
     background: var(--md-surface);
+    outline: none;
+    transition: border-color 0.15s;
+}
+
+.md-select:focus {
+    border-color: var(--md-primary);
 }
 
 .text-muted {
-    color: var(--md-on-surface-variant, #6b7280);
+    color: var(--md-on-surface-variant);
 }
 
 .md-surface {
     background-color: var(--md-surface);
     color: var(--md-on-surface);
-}
-
-.md-card {
-    background-color: var(--md-surface);
-    border-radius: 12px;
-    box-shadow: var(--md-elev-shadow);
 }
 
 .md-segment {
@@ -67,9 +80,7 @@
     padding: 6px 14px;
     border-radius: 20px;
     color: #374151;
-    /* neutral-700 */
     font-size: 0.8125rem;
-    /* text-sm */
     cursor: pointer;
     transition: all 150ms ease-in-out;
 }
@@ -103,43 +114,83 @@
 }
 
 .subtitle {
-    color: var(--md-on-surface-variant, #6b7280);
+    color: var(--md-on-surface-variant);
 }
 
 .md-chip {
     display: inline-block;
-    padding: 6px 10px;
+    padding: 4px 10px;
     border-radius: 999px;
     background: var(--md-primary);
     color: var(--md-on-primary);
-    min-width: 56px;
+    min-width: 48px;
     text-align: center;
+    font-size: 0.75rem;
 }
 
 /* Primary elevated button */
 .btn-md {
-    padding: 10px 16px;
-    border-radius: 10px;
+    padding: 8px 16px;
+    border-radius: 8px;
     background-color: var(--md-primary);
     color: var(--md-on-primary);
     font-weight: 600;
+    font-size: 0.875rem;
+    cursor: pointer;
+    border: none;
     box-shadow: var(--md-elev-shadow);
-    transition: transform .08s ease, box-shadow .12s ease;
+    transition: opacity 0.1s ease, transform 0.08s ease, box-shadow 0.12s ease;
 }
 
-.btn-md:active {
+.btn-md:hover:not(:disabled) {
+    opacity: 0.9;
+}
+
+.btn-md:active:not(:disabled) {
     transform: translateY(1px);
+}
+
+.btn-md:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
 }
 
 /* App shell adjustments */
 .app-content {
     background-color: #f8fafc;
-    /* neutral-50 */
     min-height: 0;
-    /* allow flex children to size properly */
 }
 
 /* Ensure scrollable area displays nicely */
 .scrollable {
     -webkit-overflow-scrolling: touch;
+}
+
+/* MD3 Semantic Color Utilities (for QueueList and other components) */
+@utility bg-surface-container-low {
+    background-color: var(--md-surface-container-low);
+}
+
+@utility bg-surface-container {
+    background-color: var(--md-surface-container);
+}
+
+@utility bg-surface-dim {
+    background-color: var(--md-surface-dim);
+}
+
+@utility bg-primary-container {
+    background-color: var(--md-primary-container);
+}
+
+@utility text-on-primary-container {
+    color: var(--md-on-primary-container);
+}
+
+@utility text-error {
+    color: var(--md-error);
+}
+
+@utility text-outline {
+    color: var(--md-on-surface-variant);
 }

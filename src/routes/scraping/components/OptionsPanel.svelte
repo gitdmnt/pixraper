@@ -37,11 +37,11 @@
   };
 </script>
 
-<div class="md-card p-4">
+<div class="md-card p-4 flex flex-col gap-3">
   <div class="font-medium">Scraping Options</div>
 
-  <div class="mt-3">
-    <div class="text-sm mb-1">Search Mode</div>
+  <div class="flex flex-col gap-1">
+    <div class="text-sm text-muted">Search Mode</div>
     <select
       class="md-select w-full"
       value={scrapingOption.searchMode}
@@ -54,14 +54,14 @@
     </select>
   </div>
 
-  <div class="mt-3">
-    <div class="text-sm mb-1">Tags to Scrape</div>
+  <div class="flex flex-col gap-1">
+    <div class="text-sm text-muted">Tags to Scrape</div>
     <div class="flex flex-wrap gap-2">
       {#each scrapingOption.tags as tag}
-        <div class="md-chip flex items-center gap-2">
-          <span class="text-sm">{tag}</span>
+        <div class="md-chip flex items-center gap-1">
+          <span>{tag}</span>
           <button
-            class="text-xs font-medium"
+            class="text-xs font-bold opacity-70 hover:opacity-100 cursor-pointer"
             onclick={() => handleRemoveTag(tag)}>×</button
           >
         </div>
@@ -75,9 +75,9 @@
     </div>
   </div>
 
-  <div class="mt-3 grid grid-cols-2 gap-2 items-center">
-    <div>
-      <div class="text-sm mb-1">Start Date</div>
+  <div class="grid grid-cols-2 gap-2">
+    <div class="flex flex-col gap-1">
+      <div class="text-sm text-muted">Start Date</div>
       <input
         type="date"
         class="md-select w-full"
@@ -86,8 +86,8 @@
           updateField("scd", (e.target as HTMLInputElement).value)}
       />
     </div>
-    <div>
-      <div class="text-sm mb-1">End Date</div>
+    <div class="flex flex-col gap-1">
+      <div class="text-sm text-muted">End Date</div>
       <input
         type="date"
         class="md-select w-full"
@@ -98,27 +98,30 @@
     </div>
   </div>
 
-  <label class="flex items-center gap-2 text-sm text-muted">
-    <input
-      type="checkbox"
-      bind:checked={scrapingOption.detailed}
-      onchange={(e) =>
-        updateField("detailed", (e.target as HTMLInputElement).checked)}
-    />
-    <span>Detailed</span>
-  </label>
+  <div class="flex flex-col gap-1">
+    <label class="flex items-center gap-2 text-sm text-muted cursor-pointer">
+      <input
+        type="checkbox"
+        bind:checked={scrapingOption.detailed}
+        onchange={(e) =>
+          updateField("detailed", (e.target as HTMLInputElement).checked)}
+        class="accent-(--md-primary) w-4 h-4"
+      />
+      <span>Detailed</span>
+    </label>
+    <label class="flex items-center gap-2 text-sm text-muted cursor-pointer">
+      <input
+        type="checkbox"
+        bind:checked={scrapingOption.isIllust}
+        onchange={(e) =>
+          updateField("isIllust", (e.target as HTMLInputElement).checked)}
+        class="accent-(--md-primary) w-4 h-4"
+      />
+      <span>for Illustrations (else Novels)</span>
+    </label>
+  </div>
 
-  <label class="flex items-center gap-2 text-sm text-muted">
-    <input
-      type="checkbox"
-      bind:checked={scrapingOption.isIllust}
-      onchange={(e) =>
-        updateField("isIllust", (e.target as HTMLInputElement).checked)}
-    />
-    <span>for Illustrations (else Novels)</span>
-  </label>
-
-  <div class="mt-4 flex gap-2">
+  <div class="flex gap-2">
     <Button variant="contained" onclick={handleAddQueue}>Add Queue</Button>
     <Button variant="outlined" onclick={handleClearQueue}>Clear</Button>
   </div>

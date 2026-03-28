@@ -3,10 +3,21 @@ use std::fs;
 use tauri::Manager;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct CookieProfile {
+    pub id: String,
+    pub name: String,
+    pub cookies: String,
+    pub is_valid: Option<bool>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Config {
     pub cookies: Option<String>,
     pub output: Option<String>,
     pub scraping_interval_millis: u64,
+    #[serde(default)]
+    pub cookie_profiles: Vec<CookieProfile>,
+    pub active_profile_id: Option<String>,
 }
 
 impl Default for Config {
@@ -15,6 +26,8 @@ impl Default for Config {
             cookies: None,
             output: None,
             scraping_interval_millis: 1000,
+            cookie_profiles: vec![],
+            active_profile_id: None,
         }
     }
 }
