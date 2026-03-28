@@ -386,4 +386,11 @@ mod tests {
         let d = random_interval(2000, 1000);
         assert_eq!(d, Duration::from_millis(2000));
     }
+
+    #[test]
+    fn test_random_interval_zero() {
+        // 0ms は許容する（無間隔スクレイピング）
+        let d = random_interval(0, 0);
+        assert_eq!(d, Duration::from_millis(0));
+    }
 }

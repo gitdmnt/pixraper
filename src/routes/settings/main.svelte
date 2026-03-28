@@ -121,6 +121,9 @@
         </div>
       </div>
       <div class="text-xs text-muted">リクエストごとにランダムな間隔を設定します</div>
+      {#if config.scraping_interval_min_millis > config.scraping_interval_max_millis}
+        <div class="text-xs text-error">Min は Max 以下にしてください</div>
+      {/if}
     </div>
 
     <div class="flex items-center gap-3">
