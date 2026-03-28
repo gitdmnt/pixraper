@@ -138,10 +138,10 @@ impl Worker {
                     println!("Detailed scraping cancelled");
                     break;
                 }
-                // fetch_detail_data performs its own light throttling
+                // fetch_detail_data uses the configured scraping interval
                 let current = progress.lock().await.current.unwrap_or(0);
                 progress.lock().await.current = Some(current + 1);
-                let enriched = fetch_detail_data(rec.clone(), client, &cfg.cookies).await?;
+                let enriched = fetch_detail_data(rec.clone(), client, &cfg.cookies, cfg.scraping_interval_millis).await?;
                 *rec = enriched;
             }
         }
