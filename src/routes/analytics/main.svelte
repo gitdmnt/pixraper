@@ -14,21 +14,6 @@
 
   let errorMessage: string | null = null;
 
-  // Rust側から返ってくるデータ構造
-  interface ItemRecord {
-    id: number;
-    title: string;
-    xRestrict: boolean;
-    tags: string[];
-    userId: number;
-    createDate: string;
-    aiType: boolean;
-    width: number;
-    height: number;
-    bookmarkCount: number | null;
-    viewCount: number | null;
-  }
-
   const selectAndParseCsv = async () => {
     errorMessage = null;
     loaded = false;
@@ -46,8 +31,8 @@
       });
 
       if (typeof selectedPath === "string") {
-        // Rust backend reads the CSV
-        const data = await invoke<ItemRecord[]>("load_dataset", {
+        // Rust backend reads the CSV and caches it; returns item count
+        await invoke<number>("load_dataset", {
           path: selectedPath,
         });
 
