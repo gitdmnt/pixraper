@@ -68,10 +68,13 @@ pub async fn calculate_tag_ranking(
     let mut stats: Vec<TagStats> =
         filtered_items.tag_stats(&artist_stats, (global_mean, global_std));
 
-    // 4) Sort
+    // 4) Works count cutoff（ソート前に適用してデータ量を削減）
+    stats.cutoff_filter(filter.works_count_cutoff);
+
+    // 5) Sort
     stats.sort_by_key(sort_key);
 
-    // 5) Search Query Filter
+    // 6) Search Query Filter
     if let Some(query) = &filter.search_query {
         stats.search_query_filter(query);
     }
