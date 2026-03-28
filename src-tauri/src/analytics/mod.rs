@@ -64,7 +64,7 @@ pub struct CooccurrenceResult {
 pub trait ItemRecordVecExt {
     fn filter_by(&self, f: &Filter) -> Vec<ItemRecord>;
     fn global_stats(&self) -> (f64, f64);
-    fn artist_stats(&self) -> HashMap<u64, (f64, f64)>;
+    fn artist_stats(&self, global_stats: (f64, f64)) -> HashMap<u64, (f64, f64)>;
     fn tag_stats(
         &self,
         artist_stats: &HashMap<u64, (f64, f64)>,
@@ -122,11 +122,10 @@ impl ItemRecordVecExt for Vec<ItemRecord> {
     }
 
     // userid -> (log bookmark mean, log sd)
-    fn artist_stats(&self) -> HashMap<u64, (f64, f64)> {
+    fn artist_stats(&self, global_stats: (f64, f64)) -> HashMap<u64, (f64, f64)> {
+        let (_, global_std) = global_stats;
+        let eps = 1e-9_f64;
         let mut artist_acc: HashMap<u64, (f64, f64, u64)> = HashMap::new(); // user_id -> (sum, sumsq, n)
-        let mut total_sum = 0.0_f64;
-        let mut total_sumsq = 0.0_f64;
-        let mut total_n: u64 = 0;
 
         for item in self {
             let b = item.bookmark_count.unwrap_or(0) as f64;
@@ -135,23 +134,7 @@ impl ItemRecordVecExt for Vec<ItemRecord> {
             e.0 += x;
             e.1 += x * x;
             e.2 += 1;
-            total_sum += x;
-            total_sumsq += x * x;
-            total_n += 1;
         }
-
-        let global_mean = if total_n > 0 {
-            total_sum / total_n as f64
-        } else {
-            0.0
-        };
-        let global_var = if total_n > 0 {
-            (total_sumsq / total_n as f64) - (global_mean * global_mean)
-        } else {
-            0.0
-        };
-        let global_std = global_var.max(0.0).sqrt();
-        let eps = 1e-9_f64;
 
         let mut artist_stats: HashMap<u64, (f64, f64)> = HashMap::new(); // user_id -> (mean, sd)
         for (user, (sum, sumsq, n)) in artist_acc.into_iter() {
@@ -288,6 +271,26 @@ mod tests {
     use super::*;
     use crate::scraper::scrape::ItemRecord;
 
+    fn make_item_with_bookmark(user_id: u64, bookmark_count: u64, tags: Vec<&str>) -> ItemRecord {
+        ItemRecord {
+            is_illust: true,
+            id: 0,
+            title: String::new(),
+            x_restrict: false,
+            tags: tags.into_iter().map(String::from).collect(),
+            user_id,
+            create_date: String::new(),
+            ai_type: false,
+            width: None,
+            height: None,
+            text_count: None,
+            word_count: None,
+            is_original: None,
+            bookmark_count: Some(bookmark_count),
+            view_count: None,
+        }
+    }
+
     fn make_item(tags: Vec<&str>) -> ItemRecord {
         ItemRecord {
             is_illust: true,
@@ -316,6 +319,71 @@ mod tests {
             bookmark_count: 0,
             normalized_score: 0.0,
         }
+    }
+
+    #[test]
+    fn artist_stats_uses_provided_global_stats() {
+        // 1作品のみのアーティストは自身の SD が 0 になるため global_std にフォールバックする
+        let items = vec![make_item_with_bookmark(1, 9, vec![])];
+        let global_stats = (0.0_f64, 2.0_f64);
+        let result = items.artist_stats(global_stats);
+        let (_, sd) = result.get(&1).expect("user_id=1 should exist");
+        assert!(
+            (*sd - 2.0).abs() < 1e-9,
+            "expected sd=2.0 (global_std fallback), got {sd}"
+        );
+    }
+
+    #[test]
+    fn tag_stats_normalized_score_reflects_artist_stats() {
+        // アーティスト2作品: bookmark=0 (x=0) と bookmark=9 (x=ln(10)≒2.302585)
+        // artist_mean = ln(10)/2 ≒ 1.151293, artist_sd ≒ 1.151301
+        // タグ"a"は bookmark=9 の作品のみ → normalized_score = (ln(10) - ln(10)/2) / sd ≒ 1.0
+        let items = vec![
+            make_item_with_bookmark(1, 0, vec![]),
+            make_item_with_bookmark(1, 9, vec!["a"]),
+        ];
+        let global_stats = (0.0_f64, 1.0_f64);
+        let artist_stats = items.artist_stats(global_stats);
+        let stats = items.tag_stats(&artist_stats, global_stats);
+        let entry = stats.iter().find(|s| s.tag == "a").expect("tag 'a' should exist");
+        assert!(
+            (entry.normalized_score - 1.0).abs() < 0.01,
+            "expected normalized_score ≒ 1.0, got {}",
+            entry.normalized_score
+        );
+    }
+
+    #[test]
+    fn co_occurrence_counts_correctly() {
+        let items = vec![
+            make_item_with_bookmark(1, 0, vec!["a", "b"]),
+            make_item_with_bookmark(2, 0, vec!["a", "c"]),
+        ];
+        let filter = Filter {
+            works_count_cutoff: 0,
+            show_ai_generated: true,
+            show_not_ai_generated: true,
+            show_x_restricted: true,
+            show_not_x_restricted: true,
+            search_query: None,
+        };
+        let filtered = items.filter_by(&filter);
+        let mut co_occurrence: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
+        let mut total = 0u64;
+        for item in &filtered {
+            if item.tags.contains(&"a".to_string()) {
+                total += 1;
+                for t in &item.tags {
+                    if t != "a" {
+                        *co_occurrence.entry(t.clone()).or_insert(0) += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(total, 2);
+        assert_eq!(co_occurrence.get("b"), Some(&1));
+        assert_eq!(co_occurrence.get("c"), Some(&1));
     }
 
     #[test]
