@@ -39,13 +39,19 @@ text-neutral-800"
       >
     </div>
   </TopAppBar>
-  <div class="w-full flex-1">
-    {#if tab === 0}
+  <div class="w-full flex-1 relative">
+    <!-- AnalyticsMain は常にマウントし、CSV ロード状態を保持する -->
+    <div class="absolute inset-0" class:hidden={tab !== 0}>
       <AnalyticsMain />
-    {:else if tab === 1}
-      <ScrapingMain />
+    </div>
+    {#if tab === 1}
+      <div class="absolute inset-0">
+        <ScrapingMain />
+      </div>
     {:else if tab === 2}
-      <SettingsMain />
+      <div class="absolute inset-0">
+        <SettingsMain />
+      </div>
     {/if}
   </div>
 </main>

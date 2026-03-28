@@ -47,26 +47,22 @@
 </script>
 
 <div class="flex flex-row w-full h-full gap-4 p-4 app-content">
-  <aside class="md-card w-40 p-3 flex flex-col items-center">
-    <div class="text-xs font-medium text-neutral-600 mb-2">Analytics Menu</div>
-    <div class="flex flex-col gap-2">
-      <div class="md-segment flex-col">
-        <button onclick={() => (tab = 0)} class:active={tab === 0}
-          >Tag Ranking</button
-        >
-        <button onclick={() => (tab = 1)} class:active={tab === 1}
-          >Co-occurrence</button
-        >
-        <button onclick={() => (tab = -1)} class:active={tab === -1}
-          >Raw CSV</button
-        >
-      </div>
-    </div>
-
-    <div class="mt-auto">
-      <Button variant="contained" onclick={selectAndParseCsv}>Import CSV</Button
+  <aside class="md-card w-40 p-3 flex flex-col gap-3">
+    <div class="text-xs font-medium text-muted">Analytics Menu</div>
+    <div class="md-segment flex-col">
+      <button onclick={() => (tab = 0)} class:active={tab === 0}
+        >Tag Ranking</button
+      >
+      <button onclick={() => (tab = 1)} class:active={tab === 1}
+        >Co-occurrence</button
+      >
+      <button onclick={() => (tab = -1)} class:active={tab === -1}
+        >Raw CSV</button
       >
     </div>
+
+    <div class="flex-1"></div>
+    <Button variant="contained" onclick={selectAndParseCsv}>Import CSV</Button>
   </aside>
 
   <main class="flex flex-col flex-1 gap-4">

@@ -1,8 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import type { Config } from "./type.d.ts";
-
-  import { Temporal } from "@js-temporal/polyfill";
+  import Button from "$lib/components/Button.svelte";
 
   let settingValue: Config = $state({
     cookies: "",
@@ -24,22 +23,53 @@
   };
 </script>
 
-<div class="container">
+<div class="flex flex-col p-6 gap-4 app-content h-full overflow-y-auto">
   {#if settingValue}
-    <h2>Settings</h2>
-    <button onclick={saveSettings}>Save Settings</button>
-    <h3>Pixiv Cookies</h3>
-    <textarea rows="10" cols="80" bind:value={settingValue.cookies}></textarea>
-    <h3>Output Directory</h3>
-    <input type="text" size="80" bind:value={settingValue.output} />
-    <h3>Scraping Interval (milliseconds)</h3>
-    <input
-      type="number"
-      bind:value={settingValue.scraping_interval_millis}
-      min="0"
-      step="100"
-    />
+    <div class="md-card p-6 flex flex-col gap-5 max-w-2xl">
+      <div class="text-base font-semibold">Settings</div>
+
+      <div class="flex flex-col gap-1">
+        <label class="text-sm font-medium" for="cookies">Pixiv Cookies</label>
+        <textarea
+          id="cookies"
+          rows="6"
+          class="md-select resize-y font-mono text-xs w-full"
+          bind:value={settingValue.cookies}
+          placeholder="Paste your Pixiv cookies here..."
+        ></textarea>
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label class="text-sm font-medium" for="output">Output Directory</label>
+        <input
+          id="output"
+          type="text"
+          class="md-select w-full"
+          bind:value={settingValue.output}
+          placeholder="/path/to/output"
+        />
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label class="text-sm font-medium" for="interval"
+          >Scraping Interval (ms)</label
+        >
+        <input
+          id="interval"
+          type="number"
+          class="md-select w-32"
+          bind:value={settingValue.scraping_interval_millis}
+          min="0"
+          step="100"
+        />
+        <div class="text-xs text-muted">Minimum delay between requests</div>
+      </div>
+
+      <div>
+        <Button variant="contained" onclick={saveSettings}>Save Settings</Button>
+      </div>
+    </div>
   {:else}
-    <p>Loading settings...</p>
+    <div class="md-card p-6 text-muted text-sm">Loading settings...</div>
   {/if}
 </div>
