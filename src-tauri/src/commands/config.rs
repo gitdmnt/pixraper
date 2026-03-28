@@ -6,25 +6,13 @@
 //! - `set_config` はまずインメモリを更新し、その後ディスクへ永続化します。永続化時のエラーは呼び出し元へ伝搬します。
 
 use crate::AppConfig;
-use reqwest::header::COOKIE;
-use serde::Deserialize;
+use reqwest::header::{ACCEPT, COOKIE, REFERER};
 use tauri::State;
 
 const PIXIV_USER_AGENT: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:144.0) Gecko/20100101 Firefox/144.0";
 const PIXIV_STATUS_URL: &str = "https://www.pixiv.net/touch/ajax/user/self/status";
-
-#[derive(Deserialize)]
-struct StatusBody {
-    #[serde(rename = "isLoggedIn")]
-    is_logged_in: bool,
-}
-
-#[derive(Deserialize)]
-struct StatusResponse {
-    error: bool,
-    body: Option<StatusBody>,
-}
+const PIXIV_REFERER: &str = "https://www.pixiv.net/";
 
 /// 現在の設定を返します。ロックを長く保持しないよう、クローンを返す設計です。
 #[tauri::command]
@@ -54,7 +42,14 @@ pub async fn set_config(
 }
 
 /// 指定した cookies 文字列で Pixiv にリクエストし、ログイン状態を返します。
-/// Ok(true) = 有効, Ok(false) = 無効（ログアウト状態）, Err = 通信エラー
+/// Ok(true) = 有効, Ok(false) = 無効（ログアウト状態）, Err = 通信エラーまたは予期しないレスポンス
+///
+/// 判定ロジック:
+/// 1. HTTP ステータスが 2xx でない → Ok(false)
+/// 2. レスポンスが JSON でない（Cloudflare ブロック等） → Err
+/// 3. `error` フィールドが true → Ok(false)
+/// 4. `body.user_status.user_id` が非空文字列 → Ok(true)
+/// 5. それ以外 → Ok(false)
 #[tauri::command]
 pub async fn validate_cookies(cookies: String) -> Result<bool, String> {
     let client = reqwest::Client::builder()
@@ -65,17 +60,33 @@ pub async fn validate_cookies(cookies: String) -> Result<bool, String> {
     let resp = client
         .get(PIXIV_STATUS_URL)
         .header(COOKIE, &cookies)
+        .header(REFERER, PIXIV_REFERER)
+        .header(ACCEPT, "application/json")
         .send()
         .await
         .map_err(|e| e.to_string())?;
 
-    let text = resp.text().await.map_err(|e| e.to_string())?;
-    let status: StatusResponse =
-        serde_json::from_str(&text).map_err(|e| format!("レスポンスのパースに失敗: {e}"))?;
-
-    if status.error {
+    if !resp.status().is_success() {
         return Ok(false);
     }
 
-    Ok(status.body.map(|b| b.is_logged_in).unwrap_or(false))
+    let text = resp.text().await.map_err(|e| e.to_string())?;
+
+    if !text.trim_start().starts_with('{') {
+        return Err("予期しないレスポンス形式です（Cloudflare等によるブロックの可能性）".to_string());
+    }
+
+    let value: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("JSON パース失敗: {e}"))?;
+
+    if value.get("error").and_then(|v| v.as_bool()).unwrap_or(true) {
+        return Ok(false);
+    }
+
+    let user_id = value
+        .pointer("/body/user_status/user_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    Ok(!user_id.is_empty())
 }
