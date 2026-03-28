@@ -221,6 +221,7 @@ pub struct TagCount {
 pub trait TagStatsVecExt {
     fn sort_by_key(&mut self, key: SortKey);
     fn search_query_filter(&mut self, query: &str) -> &mut Self;
+    fn cutoff_filter(&mut self, min_count: u64) -> &mut Self;
 }
 
 impl TagStatsVecExt for Vec<TagStats> {
@@ -255,6 +256,12 @@ impl TagStatsVecExt for Vec<TagStats> {
     fn search_query_filter(&mut self, query: &str) -> &mut Self {
         let query_lower = query.to_lowercase();
         self.retain(|tag_stat| tag_stat.tag.to_lowercase().contains(&query_lower));
+        self
+    }
+
+    fn cutoff_filter(&mut self, min_count: u64) -> &mut Self {
+        // min_count == 0 のとき u64 は常に 0 以上なので全件保持（フィルタリング無効）
+        self.retain(|s| s.count >= min_count);
         self
     }
 }
@@ -299,6 +306,38 @@ mod tests {
             bookmark_count: None,
             view_count: None,
         }
+    }
+
+    fn make_stat(tag: &str, count: u64) -> TagStats {
+        TagStats {
+            tag: tag.to_string(),
+            count,
+            view_count: 0,
+            bookmark_count: 0,
+            normalized_score: 0.0,
+        }
+    }
+
+    #[test]
+    fn cutoff_filter_removes_tags_below_threshold() {
+        let mut stats = vec![make_stat("low", 1), make_stat("high", 5)];
+        stats.cutoff_filter(3);
+        assert!(!stats.iter().any(|s| s.tag == "low"), "low should be removed");
+        assert!(stats.iter().any(|s| s.tag == "high"), "high should be kept");
+    }
+
+    #[test]
+    fn cutoff_filter_keeps_tags_at_threshold() {
+        let mut stats = vec![make_stat("exact", 3)];
+        stats.cutoff_filter(3);
+        assert!(stats.iter().any(|s| s.tag == "exact"), "exact == threshold should be kept");
+    }
+
+    #[test]
+    fn cutoff_filter_zero_keeps_all() {
+        let mut stats = vec![make_stat("a", 1), make_stat("b", 100)];
+        stats.cutoff_filter(0);
+        assert_eq!(stats.len(), 2);
     }
 
     #[test]
