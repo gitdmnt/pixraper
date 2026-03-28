@@ -3,7 +3,10 @@
 //! 実装上の意図:
 //! - 設定は共有状態（`AppConfig`）として管理し、コマンド間でロックしてアクセスします。
 //! - 可能な限りロックを短時間に留めるため、`get_config` は設定をクローンして返します。
-//! - `set_config` はまずインメモリを更新し、その後ディスクへ永続化します。永続化時のエラーは呼び出し元へ伝搬します。
+//! - `set_config` はまずインメモリを更新し、その後ディスクへ永続化することで、
+//!   同期的な UI 操作とディスク書き込みの責務を分離しています。
+//! - `validate_cookies` はHTTP通信部分とパースロジックを分離し、後者を純粋関数として
+//!   テスト可能にしています。
 
 use crate::AppConfig;
 use reqwest::header::{ACCEPT, COOKIE, REFERER};
@@ -21,9 +24,6 @@ pub async fn get_config(config: State<'_, AppConfig>) -> Result<crate::config::C
 }
 
 /// 設定を更新してファイルに保存します。
-/// 実装の意図:
-/// - まずインメモリの設定を置換してから、`config::save_config` で永続化することで、
-///   同期的な UI 操作とディスク書き込みの責務を分離しています。
 #[tauri::command]
 pub async fn set_config(
     app_handle: tauri::AppHandle,
@@ -41,15 +41,38 @@ pub async fn set_config(
     Ok(())
 }
 
-/// 指定した cookies 文字列で Pixiv にリクエストし、ログイン状態を返します。
-/// Ok(true) = 有効, Ok(false) = 無効（ログアウト状態）, Err = 通信エラーまたは予期しないレスポンス
+/// Pixiv touch API のレスポンステキストからログイン状態を解析します。
 ///
 /// 判定ロジック:
-/// 1. HTTP ステータスが 2xx でない → Ok(false)
-/// 2. レスポンスが JSON でない（Cloudflare ブロック等） → Err
-/// 3. `error` フィールドが true → Ok(false)
-/// 4. `body.user_status.user_id` が非空文字列 → Ok(true)
-/// 5. それ以外 → Ok(false)
+/// 1. `{` で始まらない → Cloudflare ブロック等として `Err`
+/// 2. JSON パース失敗 → `Err`
+/// 3. `error` フィールドが `true` → `Ok(false)`
+/// 4. `body.user_status.user_id` が非空文字列 → `Ok(true)`
+/// 5. それ以外 → `Ok(false)`
+pub fn parse_login_status(text: &str) -> Result<bool, String> {
+    if !text.trim_start().starts_with('{') {
+        return Err(
+            "予期しないレスポンス形式です（Cloudflare等によるブロックの可能性）".to_string(),
+        );
+    }
+
+    let value: serde_json::Value =
+        serde_json::from_str(text).map_err(|e| format!("JSON パース失敗: {e}"))?;
+
+    if value.get("error").and_then(|v| v.as_bool()).unwrap_or(true) {
+        return Ok(false);
+    }
+
+    let user_id = value
+        .pointer("/body/user_status/user_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    Ok(!user_id.is_empty())
+}
+
+/// 指定した cookies 文字列で Pixiv にリクエストし、ログイン状態を返します。
+/// Ok(true) = 有効, Ok(false) = 無効（ログアウト状態）, Err = 通信エラーまたは予期しないレスポンス
 #[tauri::command]
 pub async fn validate_cookies(cookies: String) -> Result<bool, String> {
     let client = reqwest::Client::builder()
@@ -71,22 +94,49 @@ pub async fn validate_cookies(cookies: String) -> Result<bool, String> {
     }
 
     let text = resp.text().await.map_err(|e| e.to_string())?;
+    parse_login_status(&text)
+}
 
-    if !text.trim_start().starts_with('{') {
-        return Err("予期しないレスポンス形式です（Cloudflare等によるブロックの可能性）".to_string());
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn logged_in_when_user_id_is_present() {
+        let json = r#"{"error":false,"message":"","body":{"user_status":{"user_id":"103101265","user_name":"test"}}}"#;
+        assert_eq!(parse_login_status(json), Ok(true));
     }
 
-    let value: serde_json::Value =
-        serde_json::from_str(&text).map_err(|e| format!("JSON パース失敗: {e}"))?;
-
-    if value.get("error").and_then(|v| v.as_bool()).unwrap_or(true) {
-        return Ok(false);
+    #[test]
+    fn not_logged_in_when_user_id_is_empty() {
+        let json = r#"{"error":false,"message":"","body":{"user_status":{"user_id":""}}}"#;
+        assert_eq!(parse_login_status(json), Ok(false));
     }
 
-    let user_id = value
-        .pointer("/body/user_status/user_id")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    #[test]
+    fn not_logged_in_when_error_is_true() {
+        let json = r#"{"error":true,"message":"not found","body":null}"#;
+        assert_eq!(parse_login_status(json), Ok(false));
+    }
 
-    Ok(!user_id.is_empty())
+    #[test]
+    fn error_when_response_is_html() {
+        let html = "<!DOCTYPE html><html><body>Access denied</body></html>";
+        assert!(parse_login_status(html).is_err());
+        assert!(parse_login_status(html)
+            .unwrap_err()
+            .contains("Cloudflare"));
+    }
+
+    #[test]
+    fn error_when_json_is_malformed() {
+        let bad = "{invalid json";
+        assert!(parse_login_status(bad).is_err());
+    }
+
+    #[test]
+    fn not_logged_in_when_user_status_is_missing() {
+        let json = r#"{"error":false,"message":"","body":{}}"#;
+        assert_eq!(parse_login_status(json), Ok(false));
+    }
 }
