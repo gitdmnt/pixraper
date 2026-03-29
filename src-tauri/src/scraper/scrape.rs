@@ -9,13 +9,14 @@
 //! 注意: HTTP の副作用は `api` モジュールに委譲できる部分もありますが、利便性のために `ScrapingOption::fetch_rough` に一部実装を残しています。
 
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::config::Config;
 use crate::csv::AppHandleLike;
 
-use crate::scraper::api::{fetch_detail_data, fetch_search_result, IllustData, NovelData};
+use crate::scraper::api::{fetch_detail_data, fetch_one_page};
 
 /// 内部で使用する簡易的なアイテム表現（CSV出力やUIに渡すため）
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,6 +38,9 @@ pub struct ItemRecord {
     pub bookmark_count: Option<u64>,
     pub view_count: Option<u64>,
 }
+
+use crate::scraper::api::{IllustData, NovelData};
+
 impl From<IllustData> for ItemRecord {
     fn from(data: IllustData) -> Self {
         ItemRecord {
@@ -103,6 +107,10 @@ pub struct ScrapingProgress {
     pub status: ScrapingStatus,
     pub total: Option<u64>,
     pub current: Option<u64>,
+    /// 直近のエラーメッセージ。次の Start コマンドでクリア。
+    pub error: Option<String>,
+    /// 処理中の作品タイトルまたはクエリ。
+    pub current_item: Option<String>,
 }
 
 /// スクレイピングの状態（実行中か停止中か）
@@ -124,35 +132,96 @@ impl Worker {
         progress: &Arc<Mutex<ScrapingProgress>>,
         cfg: &Config,
         token: &tokio_util::sync::CancellationToken,
-        app_handle: &dyn AppHandleLike,
+        _app_handle: &dyn AppHandleLike,
+        output_path: &Path,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        // Prepare and delegate network/paging to the api layer
         println!("Starting scraping with options: {:?}", option);
 
-        // Fetch basic list
-        let mut items = fetch_search_result(cfg, option, client, progress, token).await?;
+        // 初期進捗
+        {
+            let mut p = progress.lock().await;
+            p.status = ScrapingStatus::Running;
+            p.current = Some(0);
+            p.total = Some(0);
+            p.current_item = Some(option.tags.join(" "));
+        }
 
-        // If detailed mode is requested, enrich each item with detail API calls
-        if option.detailed {
-            for rec in &mut items {
+        // ページループ: fetch_one_page を直接呼ぶ
+        let mut curr_page: u64 = 1;
+        let mut last_page: u64 = 1;
+        let mut all_basic_items: Vec<ItemRecord> = Vec::new();
+
+        while curr_page <= last_page {
+            if token.is_cancelled() {
+                println!("Scraping was cancelled.");
+                break;
+            }
+
+            let (page_items, page_last_page) =
+                fetch_one_page(cfg, option, client, curr_page).await?;
+
+            if curr_page == 1 {
+                last_page = page_last_page;
+                println!("Total pages: {}", last_page);
+                let total_pages = last_page
+                    + if option.detailed {
+                        // 詳細モードの場合はページ数に加えて各アイテム数も考慮
+                        // ここでは概算としてページ数のみ加える
+                        0
+                    } else {
+                        0
+                    };
+                progress.lock().await.total = Some(total_pages);
+            }
+
+            // ページごとに CSV に append 保存（write_header: ページ1のみ true）
+            crate::csv::append_rows_to_csv(output_path, &page_items, curr_page == 1)?;
+
+            all_basic_items.extend(page_items);
+            progress.lock().await.current = Some(curr_page);
+            println!("Fetched page {} / {}", curr_page, last_page);
+
+            curr_page += 1;
+        }
+
+        println!(
+            "Basic scraping completed. Total items: {}",
+            all_basic_items.len()
+        );
+
+        // 詳細モード: 各アイテムの詳細を取得
+        if option.detailed && !token.is_cancelled() {
+            let mut all_enriched: Vec<ItemRecord> = Vec::new();
+
+            for rec in &all_basic_items {
                 if token.is_cancelled() {
                     println!("Detailed scraping cancelled");
                     break;
                 }
-                // fetch_detail_data uses the configured scraping interval
-                let current = progress.lock().await.current.unwrap_or(0);
-                progress.lock().await.current = Some(current + 1);
-                let enriched = fetch_detail_data(rec.clone(), client, &cfg.cookies, cfg.scraping_interval_min_millis, cfg.scraping_interval_max_millis).await?;
-                *rec = enriched;
-            }
-        }
 
-        // Save to CSV if we have items
-        if !items.is_empty() {
-            if let Err(e) = crate::csv::save_as_csv(&items, app_handle).await {
-                println!("Failed to save CSV: {}", e);
-                // We might want to return error or just log it.
-                // For now, logging is safer to keep loop running if needed.
+                // 処理中のアイテムタイトルを進捗に反映
+                {
+                    let mut p = progress.lock().await;
+                    p.current_item = Some(rec.title.clone());
+                    let current = p.current.unwrap_or(0);
+                    p.current = Some(current + 1);
+                }
+
+                let enriched = fetch_detail_data(
+                    rec.clone(),
+                    client,
+                    &cfg.cookies,
+                    cfg.scraping_interval_min_millis,
+                    cfg.scraping_interval_max_millis,
+                )
+                .await?;
+                all_enriched.push(enriched);
+            }
+
+            // 詳細モード完了後: enriched データで CSV を上書き
+            if !all_enriched.is_empty() {
+                crate::csv::append_rows_to_csv(output_path, &all_enriched, true)?;
+                println!("Detailed CSV overwritten with {} items", all_enriched.len());
             }
         }
 

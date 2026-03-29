@@ -1,8 +1,8 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import Button from "$lib/components/Button.svelte";
-  import type { CookieProfile } from "./type.d.ts";
-  import { parseCookies, hasPhpSessionId } from "./cookieParser.ts";
+  import type { CookieProfile } from "./type.d";
+  import { parseCookies, hasPhpSessionId } from "./cookieParser";
 
   export let profile: CookieProfile;
   export let onsave: (profile: CookieProfile) => void = () => {};

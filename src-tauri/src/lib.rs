@@ -3,6 +3,7 @@
 mod analytics;
 mod config;
 mod csv;
+mod queue_state;
 mod scraper;
 
 use std::sync::Arc;
@@ -21,7 +22,16 @@ pub fn run() {
             let app_handle = app.handle();
             let config = config::load_config(app_handle);
             app.manage(Arc::new(Mutex::new(config.clone())));
-            app.manage(scraper::QueryQueueHandle::new(&config, app_handle.clone()));
+
+            // 永続化されたキューをロードし、初期キューとして渡す
+            let persisted_queue =
+                queue_state::load_queue(app_handle).unwrap_or_default();
+            app.manage(scraper::QueryQueueHandle::new_with_queue(
+                &config,
+                app_handle.clone(),
+                persisted_queue,
+            ));
+
             // Initialize analytics cache state (None initially)
             app.manage(commands::analytics::AnalyticsState(Arc::new(Mutex::new(
                 None,

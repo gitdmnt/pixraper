@@ -121,9 +121,112 @@ pub(crate) struct NovelDetailBody {
     pub(crate) view_count: u64,
 }
 
+/// 検索URLのベースを構築する純粋関数。
+fn build_search_base_url(option: &ScrapingOption) -> (String, String) {
+    let tags = option.tags.join(" ");
+    let base_url = format!(
+        "https://www.pixiv.net/ajax/search/{}/{}",
+        if option.is_illust {
+            "artworks"
+        } else {
+            "novels"
+        },
+        utf8_percent_encode(&tags, NON_ALPHANUMERIC)
+    );
+    (base_url, tags)
+}
+
+/// レスポンスから IllustMangaNovel を抽出する純粋関数。
+fn extract_search_body(
+    response: PixivSearchResponse,
+    is_illust: bool,
+) -> Result<IllustMangaNovel, Box<dyn std::error::Error + Send + Sync>> {
+    if response.error {
+        return Err(format!(
+            "APIエラーが発生しました: {}",
+            response.message.unwrap_or_default()
+        )
+        .into());
+    }
+    if is_illust {
+        response
+            .body
+            .illust_manga
+            .ok_or_else(|| "レスポンスに 'illustManga' フィールドが含まれていません".into())
+    } else {
+        response
+            .body
+            .novel
+            .ok_or_else(|| "レスポンスに 'novel' フィールドが含まれていません".into())
+    }
+}
+
+/// IllustMangaNovel のデータを ItemRecord のリストに変換する純粋関数。
+fn to_item_records(data: Vec<IllustNovelRecordOrAd>) -> Vec<ItemRecord> {
+    data.into_iter()
+        .filter_map(|d| match d {
+            IllustNovelRecordOrAd::Illust(item) => Some(item.into()),
+            IllustNovelRecordOrAd::Novel(item) => Some(item.into()),
+            IllustNovelRecordOrAd::Ad(_) => None,
+        })
+        .collect()
+}
+
+/// 1ページ分の検索結果を取得する内部関数。
+/// - 1ページのリクエスト → レスポンス検証 → Vec<ItemRecord> + last_page を返す。
+/// - インターバルスリープをここで行う。
+/// - 進捗更新・キャンセルチェックは呼び出し元（Worker）に任せる。
+pub(crate) async fn fetch_one_page(
+    cfg: &Config,
+    option: &ScrapingOption,
+    client: &reqwest::Client,
+    page: u64,
+) -> Result<(Vec<ItemRecord>, u64), Box<dyn std::error::Error + Send + Sync>> {
+    tokio::time::sleep(random_interval(
+        cfg.scraping_interval_min_millis,
+        cfg.scraping_interval_max_millis,
+    ))
+    .await;
+
+    let (base_url, tags) = build_search_base_url(option);
+
+    let resp = client
+        .get(&base_url)
+        .query(&[
+            ("word", tags.as_str()),
+            ("order", "date_d"),
+            ("mode", "all"),
+            ("csw", "0"),
+            ("s_mode", option.search_mode.as_str()),
+            ("type", "all"),
+            ("lang", "ja"),
+            ("ai_type", "0"),
+            ("scd", option.scd.as_str()),
+            ("ecd", option.ecd.as_str()),
+            ("p", &page.to_string()),
+        ])
+        .header(COOKIE, cfg.cookies.as_deref().unwrap_or_default())
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        return Err(format!("取得失敗: HTTP {}", resp.status()).into());
+    }
+
+    let search_response: PixivSearchResponse = serde_json::from_str(&resp.text().await?)?;
+    let search_body = extract_search_body(search_response, option.is_illust)?;
+
+    let last_page = search_body.last_page;
+    let items = to_item_records(search_body.data);
+
+    Ok((items, last_page))
+}
+
 /// ラフ検索（ページ単位で複数ページを取得）を実行する公開API
 /// - ネットワーク、ページ巡回、レスポンスの検証と ItemRecord への変換を担当します。
 /// - 進捗更新 (`ScrapingProgress`) とキャンセル (`CancellationToken`) に対応します。
+/// - `fetch_one_page` のループラッパーとして機能します（テスト互換性維持）。
+#[allow(dead_code)]
 pub async fn fetch_search_result(
     cfg: &Config,
     scraping_option: &ScrapingOption,
@@ -131,19 +234,6 @@ pub async fn fetch_search_result(
     progress: &Arc<Mutex<ScrapingProgress>>,
     token: &tokio_util::sync::CancellationToken,
 ) -> Result<Vec<ItemRecord>, Box<dyn std::error::Error + Send + Sync>> {
-    let cookie_header = cfg.cookies.clone();
-
-    let tags = scraping_option.tags.join(" ");
-    let base_url = format!(
-        "https://www.pixiv.net/ajax/search/{}/{}",
-        if scraping_option.is_illust {
-            "artworks"
-        } else {
-            "novels"
-        },
-        utf8_percent_encode(&tags, NON_ALPHANUMERIC)
-    );
-
     let mut curr_page: u64 = 1;
     let mut last_page: u64 = 1;
     let mut scraping_results: Vec<ItemRecord> = Vec::new();
@@ -162,77 +252,24 @@ pub async fn fetch_search_result(
             break;
         }
 
-        tokio::time::sleep(random_interval(cfg.scraping_interval_min_millis, cfg.scraping_interval_max_millis)).await;
-
-        let resp = client
-            .get(&base_url)
-            .query(&[
-                ("word", tags.as_str()),
-                ("order", "date_d"),
-                ("mode", "all"),
-                ("csw", "0"),
-                ("s_mode", scraping_option.search_mode.as_str()),
-                ("type", "all"),
-                ("lang", "ja"),
-                ("ai_type", "0"),
-                ("scd", scraping_option.scd.as_str()),
-                ("ecd", scraping_option.ecd.as_str()),
-                ("p", &curr_page.to_string()),
-            ])
-            .header(COOKIE, cookie_header.as_deref().unwrap_or_default())
-            .send()
-            .await?;
-
-        if !resp.status().is_success() {
-            return Err(format!("取得失敗: HTTP {}", resp.status()).into());
-        }
-
-        let search_response: PixivSearchResponse = serde_json::from_str(&resp.text().await?)?;
-
-        if search_response.error {
-            return Err(format!(
-                "APIエラーが発生しました: {}",
-                search_response.message.unwrap_or_default()
-            )
-            .into());
-        }
-
-        let search_body = if scraping_option.is_illust {
-            search_response
-                .body
-                .illust_manga
-                .ok_or("レスポンスに 'illustManga' フィールドが含まれていません")?
-        } else {
-            search_response
-                .body
-                .novel
-                .ok_or("レスポンスに 'novel' フィールドが含まれていません")?
-        };
-
-        let search_results: Vec<ItemRecord> = search_body
-            .data
-            .into_iter()
-            .filter_map(|d| match d {
-                IllustNovelRecordOrAd::Illust(item) => Some(item.into()),
-                IllustNovelRecordOrAd::Novel(item) => Some(item.into()),
-                IllustNovelRecordOrAd::Ad(_) => None,
-            })
-            .collect();
+        let (page_items, page_last_page) =
+            fetch_one_page(cfg, scraping_option, client, curr_page).await?;
 
         if curr_page == 1 {
-            last_page = search_body.last_page;
-            println!("Total items found: {}", search_body.total);
+            last_page = page_last_page;
+            println!("Total last_page: {}", last_page);
             progress.lock().await.total = Some(
                 last_page
                     + if scraping_option.detailed {
-                        search_body.total
+                        // total items is approximated from last_page for now
+                        0
                     } else {
                         0
                     },
             );
         }
 
-        scraping_results.extend(search_results);
+        scraping_results.extend(page_items);
 
         progress.lock().await.current = Some(curr_page);
         println!("Fetched page {} / {}", curr_page, last_page);
@@ -392,5 +429,59 @@ mod tests {
         // 0ms は許容する（無間隔スクレイピング）
         let d = random_interval(0, 0);
         assert_eq!(d, Duration::from_millis(0));
+    }
+
+    #[test]
+    fn build_search_base_url_illust() {
+        let option = crate::scraper::scrape::ScrapingOption {
+            id: "1".to_string(),
+            tags: vec!["夕焼け".to_string(), "空".to_string()],
+            search_mode: "s_tag".to_string(),
+            scd: "".to_string(),
+            ecd: "".to_string(),
+            detailed: false,
+            is_illust: true,
+        };
+        let (url, tags) = build_search_base_url(&option);
+        assert!(url.contains("artworks"), "イラスト検索URLにartworksが含まれること");
+        assert_eq!(tags, "夕焼け 空");
+    }
+
+    #[test]
+    fn build_search_base_url_novel() {
+        let option = crate::scraper::scrape::ScrapingOption {
+            id: "2".to_string(),
+            tags: vec!["ファンタジー".to_string()],
+            search_mode: "s_tag".to_string(),
+            scd: "".to_string(),
+            ecd: "".to_string(),
+            detailed: false,
+            is_illust: false,
+        };
+        let (url, _) = build_search_base_url(&option);
+        assert!(url.contains("novels"), "小説検索URLにnovelsが含まれること");
+    }
+
+    #[test]
+    fn to_item_records_filters_ads() {
+        let data = vec![
+            IllustNovelRecordOrAd::Ad(AdContainer {
+                is_ad_container: true,
+            }),
+            IllustNovelRecordOrAd::Illust(IllustData {
+                id: "1".to_string(),
+                title: "test".to_string(),
+                x_restrict: 0,
+                tags: vec![],
+                user_id: "100".to_string(),
+                create_date: "2024-01-01".to_string(),
+                ai_type: 1,
+                width: 1920,
+                height: 1080,
+            }),
+        ];
+        let records = to_item_records(data);
+        assert_eq!(records.len(), 1, "広告はフィルタされること");
+        assert_eq!(records[0].id, 1);
     }
 }

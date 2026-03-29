@@ -13,7 +13,7 @@ use std::collections::VecDeque;
 use tokio::sync::Mutex;
 
 use crate::config::Config;
-use crate::csv::AppHandleLike;
+use crate::csv::{generate_output_path, AppHandleLike};
 use crate::scraper::scrape::{ScrapingOption, ScrapingProgress, ScrapingStatus, Worker};
 
 /// キュー操作用のコマンド列挙型。
@@ -39,6 +39,8 @@ enum Command {
     Remove(String),
     /// Workerの処理が完了したことを通知する。
     WorkerFinished,
+    /// Worker がエラーで終了したことを通知する。
+    WorkerError(String),
     /// Worker が動作中かどうかを問い合わせる（主にテスト用）
     IsWorkerRunning(tokio::sync::oneshot::Sender<bool>),
     /// 現在のプロファイルインデックスを取得する（主にテスト用）
@@ -89,10 +91,12 @@ impl QueryQueueActor {
             client,
             true,
             false,
+            VecDeque::new(),
         )
     }
 
     /// テストやカスタム設定用に Client / AppHandle / 実行モードを注入できるコンストラクタ
+    #[allow(clippy::too_many_arguments)]
     pub fn new_with_client_and_apphandle(
         receiver: tokio::sync::mpsc::Receiver<Command>,
         sender: tokio::sync::mpsc::Sender<Command>,
@@ -101,13 +105,16 @@ impl QueryQueueActor {
         client: reqwest::Client,
         spawn_workers_async: bool,
         simulate_workers: bool,
+        initial_queue: VecDeque<ScrapingOption>,
     ) -> Self {
         Self {
-            queue: VecDeque::new(),
+            queue: initial_queue,
             progress: Arc::new(Mutex::new(ScrapingProgress {
                 status: ScrapingStatus::Stopped,
                 total: None,
                 current: None,
+                error: None,
+                current_item: None,
             })),
             client,
             cfg,
@@ -122,14 +129,21 @@ impl QueryQueueActor {
         }
     }
 
+    /// キューの状態を永続化する。
+    fn save_queue_state(&self) {
+        let _ = crate::queue_state::save_queue(&*self.app_handle, &self.queue);
+    }
+
     pub async fn run(&mut self) {
         while let Some(command) = self.receiver.recv().await {
             match command {
                 Command::Add(option) => {
                     self.queue.push_back(option);
+                    self.save_queue_state();
                 }
                 Command::Clear => {
                     self.queue.clear();
+                    self.save_queue_state();
                 }
                 Command::Start(token) => {
                     // 既に実行中なら無視
@@ -143,6 +157,8 @@ impl QueryQueueActor {
                     {
                         let mut p = self.progress.lock().await;
                         p.status = ScrapingStatus::Running;
+                        p.error = None;
+                        p.current_item = None;
                     }
                     let _ = self.sender.send(Command::RunNext).await;
                 }
@@ -166,6 +182,8 @@ impl QueryQueueActor {
 
                     // 無事起動した場合
                     if let Some(option) = self.queue.pop_front() {
+                        self.save_queue_state();
+
                         let client = self.client.clone();
                         let progress = self.progress.clone(); // Arc<Mutex>
 
@@ -180,6 +198,7 @@ impl QueryQueueActor {
 
                         let app_handle = self.app_handle.clone();
                         let sender = self.sender.clone(); // Self sender
+                        let output_path = generate_output_path(&*self.app_handle);
 
                         // フラグを立てて実行中にする
                         self.worker_running = true;
@@ -197,31 +216,52 @@ impl QueryQueueActor {
                         // Workerに処理を委譲 (Spawnして非同期実行) または同期実行
                         if self.spawn_workers_async {
                             tokio::spawn(async move {
-                                Worker::run(
+                                match Worker::run(
                                     &option,
                                     &client,
                                     &progress,
                                     &cfg,
                                     &token,
                                     &*app_handle,
+                                    &output_path,
                                 )
                                 .await
-                                .unwrap_or_else(|e| {
-                                    println!("Error during scraping: {}", e);
-                                });
-
-                                // 完了通知を送る (RunNextではなくWorkerFinished)
-                                let _ = sender.send(Command::WorkerFinished).await;
+                                {
+                                    Ok(()) => {
+                                        let _ = sender.send(Command::WorkerFinished).await;
+                                    }
+                                    Err(e) => {
+                                        println!("Error during scraping: {}", e);
+                                        let _ = sender
+                                            .send(Command::WorkerError(e.to_string()))
+                                            .await;
+                                    }
+                                }
                             });
                         } else {
                             // 同期実行 (テストでの確認や制御がしやすい)
-                            Worker::run(&option, &client, &progress, &cfg, &token, &*app_handle)
-                                .await
-                                .unwrap_or_else(|e| {
+                            match Worker::run(
+                                &option,
+                                &client,
+                                &progress,
+                                &cfg,
+                                &token,
+                                &*app_handle,
+                                &output_path,
+                            )
+                            .await
+                            {
+                                Ok(()) => {
+                                    let _ = self.sender.send(Command::WorkerFinished).await;
+                                }
+                                Err(e) => {
                                     println!("Error during scraping: {}", e);
-                                });
-
-                            let _ = self.sender.send(Command::WorkerFinished).await;
+                                    let _ = self
+                                        .sender
+                                        .send(Command::WorkerError(e.to_string()))
+                                        .await;
+                                }
+                            }
                         }
                     } else {
                         // キューが空
@@ -234,6 +274,21 @@ impl QueryQueueActor {
                     self.worker_running = false;
                     // 次があれば実行する
                     let _ = self.sender.send(Command::RunNext).await;
+                }
+                Command::WorkerError(msg) => {
+                    self.worker_running = false;
+                    self.queue.clear();
+                    if let Some(token) = &self.scraping_token {
+                        token.cancel();
+                    }
+                    self.scraping_token = None;
+                    {
+                        let mut p = self.progress.lock().await;
+                        p.status = ScrapingStatus::Stopped;
+                        p.error = Some(msg);
+                        p.current_item = None;
+                    }
+                    self.save_queue_state();
                 }
                 Command::Stop => {
                     println!("Stopping scraping process...");
@@ -258,6 +313,7 @@ impl QueryQueueActor {
                 }
                 Command::Remove(id) => {
                     self.queue.retain(|opt| opt.id != id);
+                    self.save_queue_state();
                 }
             }
         }
@@ -283,6 +339,36 @@ impl QueryQueueHandle {
         Self { sender }
     }
 
+    /// 初期キューを受け取るコンストラクタ。起動時のキュー永続化ロード用。
+    pub fn new_with_queue(
+        cfg: &Config,
+        app_handle: tauri::AppHandle,
+        initial_queue: VecDeque<ScrapingOption>,
+    ) -> Self {
+        let (sender, receiver) = tokio::sync::mpsc::channel(100);
+        let client = reqwest::Client::builder()
+            .user_agent(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:144.0) Gecko/20100101 Firefox/144.0",
+            )
+            .build()
+            .unwrap();
+        let app_handle_arc: Arc<dyn AppHandleLike> = Arc::new(app_handle);
+        let mut actor = QueryQueueActor::new_with_client_and_apphandle(
+            receiver,
+            sender.clone(),
+            cfg.clone(),
+            app_handle_arc,
+            client,
+            true,
+            false,
+            initial_queue,
+        );
+        tauri::async_runtime::spawn(async move {
+            actor.run().await;
+        });
+        Self { sender }
+    }
+
     /// テスト用 / カスタム用コンストラクタ。AppHandle は trait オブジェクトで渡す。
     pub fn new_with_client_and_app(
         cfg: &Config,
@@ -300,6 +386,7 @@ impl QueryQueueHandle {
             client,
             spawn_workers_async,
             simulate_workers,
+            VecDeque::new(),
         );
         // Use tokio runtime for tests to control lifetime (tests use tokio::test)
         tokio::spawn(async move {
@@ -307,6 +394,7 @@ impl QueryQueueHandle {
         });
         Self { sender }
     }
+
     /// キューにオプションを追加します（非同期に enqueue されます）。
     pub async fn add(&self, option: ScrapingOption) {
         let _ = self.sender.send(Command::Add(option)).await;
@@ -343,6 +431,8 @@ impl QueryQueueHandle {
                 status: ScrapingStatus::Stopped,
                 total: None,
                 current: None,
+                error: None,
+                current_item: None,
             },
         ))
     }
@@ -365,6 +455,12 @@ impl QueryQueueHandle {
         queue_length == 0
     }
 
+    /// テスト用: WorkerError コマンドを直接送信します。
+    #[cfg(test)]
+    async fn send_worker_error_for_test(&self, msg: String) {
+        let _ = self.sender.send(Command::WorkerError(msg)).await;
+    }
+
     /// 現在のプロファイルインデックスを取得します（テスト用）。
     pub async fn get_profile_index(&self) -> usize {
         let (responder, receiver) = tokio::sync::oneshot::channel();
@@ -380,21 +476,25 @@ impl QueryQueueHandle {
 mod tests {
     use super::*;
     use crate::config::Config;
+    use std::path::PathBuf;
     use std::sync::Arc;
     use tokio::time::{timeout, Duration};
 
     struct DummyAppHandle {
-        base: std::path::PathBuf,
+        base: PathBuf,
     }
 
     impl DummyAppHandle {
-        fn new(base: std::path::PathBuf) -> Self {
+        fn new(base: PathBuf) -> Self {
             Self { base }
         }
     }
 
     impl AppHandleLike for DummyAppHandle {
-        fn document_dir(&self) -> Option<std::path::PathBuf> {
+        fn document_dir(&self) -> Option<PathBuf> {
+            Some(self.base.clone())
+        }
+        fn config_dir(&self) -> Option<PathBuf> {
             Some(self.base.clone())
         }
     }
@@ -595,5 +695,38 @@ mod tests {
         .await;
 
         assert!(res.is_ok(), "Stop did not take effect in time");
+    }
+
+    #[tokio::test]
+    async fn worker_error_clears_queue_and_sets_error_status() {
+        let cfg = Config::default();
+        let temp = tempfile::tempdir().unwrap();
+        let app = Arc::new(DummyAppHandle::new(temp.path().to_path_buf()));
+        let client = reqwest::Client::builder().build().unwrap();
+
+        // simulate_workers=true で WorkerError ではなく WorkerFinished が送られるが、
+        // ここでは WorkerError のハンドラを直接テストするため QueryQueueHandle を使う
+        let handle = QueryQueueHandle::new_with_client_and_app(&cfg, app, client, true, true);
+
+        // キューに2件追加
+        handle.add(make_option_with_id("err-a")).await;
+        handle.add(make_option_with_id("err-b")).await;
+
+        // WorkerError コマンドを直接送信する
+        handle
+            .send_worker_error_for_test("test error".to_string())
+            .await;
+
+        // actor が処理するまで待つ
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        // キューがクリアされていること
+        let queue = handle.get_queue().await;
+        assert!(queue.is_empty(), "WorkerError でキューがクリアされること");
+
+        // 進捗にエラーがセットされ Stopped 状態であること
+        let (_, progress) = handle.get_progress().await;
+        assert_eq!(progress.status, ScrapingStatus::Stopped);
+        assert_eq!(progress.error.as_deref(), Some("test error"));
     }
 }

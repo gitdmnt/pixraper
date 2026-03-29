@@ -20,24 +20,27 @@
     isIllust: boolean;
   }
 
-  let scrapingOption: ScrapingOption = {
+  let scrapingOption: ScrapingOption = $state({
+    id: crypto.randomUUID(),
     tags: [] as string[],
     searchMode: "s_tag",
     scd: Temporal.Now.plainDateISO().toString(),
     ecd: Temporal.Now.plainDateISO().toString(),
     detailed: false,
     isIllust: true,
-  };
+  });
 
   // UI state
-  let isRunning = false;
-  let scrapedItems = 0;
-  let totalItems = 0;
-  let queue: ScrapingOption[] = [];
+  let isRunning = $state(false);
+  let scrapedItems = $state(0);
+  let totalItems = $state(0);
+  let queue: ScrapingOption[] = $state([]);
+  let currentItem: string | null = $state(null);
+  let lastError: string | null = $state(null);
 
-  $: progressPercent = totalItems
-    ? Math.round((scrapedItems / totalItems) * 100)
-    : 0;
+  const progressPercent = $derived(
+    totalItems ? Math.round((scrapedItems / totalItems) * 100) : 0
+  );
 
   // Polling logic
   let pollInterval: number | undefined;
@@ -46,6 +49,8 @@
     status: "Running" | "Stopped";
     total: number | null;
     current: number | null;
+    error: string | null;
+    current_item: string | null;
   }
 
   const fetchQueue = async () => {
@@ -75,6 +80,10 @@
       isRunning = progress.status === "Running";
       scrapedItems = progress.current || 0;
       totalItems = progress.total || 0;
+      currentItem = progress.current_item ?? null;
+      if (!isRunning) {
+        lastError = progress.error ?? null;
+      }
 
       console.log(
         `Polled progress: ${scrapedItems}/${totalItems} (${progress.status})`
@@ -96,8 +105,10 @@
       fetchQueue();
       const progress = await invoke<ScrapingProgress>("get_progress");
       isRunning = progress.status === "Running";
-      scrapedItems = progress.current || 0;
-      totalItems = progress.total || 0;
+      scrapedItems = progress.current ?? 0;
+      totalItems = progress.total ?? 0;
+      currentItem = progress.current_item ?? null;
+      lastError = progress.error ?? null;
 
       if (isRunning) {
         startPolling();
@@ -165,6 +176,7 @@
   };
 
   const startScraping = () => {
+    lastError = null;
     // isRunning will be updated by pollProgress
     startPolling();
     invoke("start_scraping")
@@ -202,6 +214,21 @@
     <!-- Left / Main -->
     <main class="md:col-span-2 flex flex-col gap-4">
       <ProgressPanel {isRunning} {scrapedItems} {totalItems} />
+
+      {#if isRunning && currentItem}
+        <div class="rounded-md bg-blue-50 border border-blue-200 px-4 py-2 text-sm text-blue-700">
+          処理中: {currentItem}
+        </div>
+      {/if}
+
+      {#if !isRunning && lastError}
+        <div class="rounded-md bg-red-50 border border-red-300 px-4 py-3 text-sm text-red-700 flex flex-col gap-1">
+          <span class="font-semibold">エラーが発生しました</span>
+          <span>{lastError}</span>
+          <span class="text-xs text-red-500">次の開始時にクリアされます</span>
+        </div>
+      {/if}
+
       <QueueList {queue} {clearQueue} {removeQueueItem} />
     </main>
 
